@@ -1,29 +1,44 @@
+-- we should maybe use pg air instead? Makes more sense than setting everything
+-- up ourselves...
 CREATE USER pgmonitor PASSWORD 'password';
 
 CREATE SCHEMA schema1;
+
 CREATE TABLE schema1.testtable1 (id int8 PRIMARY KEY);
+
 CREATE TABLE schema1.testtable2 (id int8, id_data text);
+
 COMMENT ON TABLE schema1.testtable2 IS 'test comment';
+
 CREATE TABLE schema1.testtable3 (id serial PRIMARY KEY, cool_col jsonb);
+
 CREATE TABLE schema1.nasty_table_without_cols ();
 
 CREATE SCHEMA schema2;
 
 -- Make pgmonitor member of pg_monitor role
 GRANT pg_monitor TO pgmonitor;
+
 CREATE SCHEMA IF NOT EXISTS pgmonitor;
+
 GRANT USAGE ON SCHEMA pgmonitor TO pgmonitor;
+
 CREATE EXTENSION pg_stat_statements SCHEMA pgmonitor;
+
 --this allows the monitoring user to "think" it is using pg_stat_activity
 ALTER USER pgmonitor
-SET SEARCH_PATH = pgmonitor,
+SET
+SEARCH_PATH = pgmonitor,
 pg_catalog;
+
 CREATE OR REPLACE FUNCTION public.pgmonitor_get_information_schema_schemata() RETURNS SETOF information_schema.schemata AS $$
   /* pgmonitor */
 SELECT *
 FROM information_schema.schemata;
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER;
-GRANT EXECUTE ON FUNCTION public.pgmonitor_get_information_schema_schemata TO pgmonitor;
+
+GRANT
+EXECUTE ON FUNCTION public.pgmonitor_get_information_schema_schemata TO pgmonitor;
 
 CREATE OR REPLACE FUNCTION public.pgmonitor_get_tables() RETURNS TABLE (
     table_name text,
@@ -142,17 +157,22 @@ WHERE c.relkind = 'r'
   );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-GRANT EXECUTE ON FUNCTION public.pgmonitor_get_tables TO pgmonitor;
+
+GRANT
+EXECUTE ON FUNCTION public.pgmonitor_get_tables TO pgmonitor;
+
 -- Create secure function for pg_stat_statements
 CREATE OR REPLACE FUNCTION pgmonitor.pgmonitor_get_pg_stat_statements() RETURNS SETOF pgmonitor.pg_stat_statements AS $$
   /* pgmonitor */
 SELECT *
 FROM pgmonitor.pg_stat_statements;
 $$ LANGUAGE sql VOLATILE SECURITY DEFINER;
+
 -- Create secure function to pg_stat_statements_reset
 CREATE OR REPLACE FUNCTION pgmonitor.pgmonitor_reset_pg_stat_statements() RETURNS SETOF void AS $$
   /* pgmonitor */
 SELECT pgmonitor.pg_stat_statements_reset() $$ LANGUAGE sql VOLATILE SECURITY DEFINER;
+
 -- Create function to query pg_stat_subscription_stats without errors
 CREATE OR REPLACE FUNCTION pgmonitor.pg_stat_subscription_stats_if_exists() RETURNS TABLE (
     subid oid,
@@ -175,15 +195,23 @@ CREATE OR REPLACE FUNCTION pgmonitor.pg_stat_subscription_stats_if_exists() RETU
   );
 END IF;
 END $func$;
+
 -- Create materialized view pg_stat_statements_history
 CREATE MATERIALIZED VIEW IF NOT EXISTS pgmonitor.pg_stat_statements_history AS
 SELECT
     *,
     (CURRENT_DATE - interval '1 day')::date AS from_date,
     CURRENT_DATE AS to_date
-FROM pgmonitor.pgmonitor_get_pg_stat_statements() WITH NO DATA;
-GRANT EXECUTE ON FUNCTION pgmonitor.pgmonitor_reset_pg_stat_statements TO pgmonitor;
+FROM
+    pgmonitor.pgmonitor_get_pg_stat_statements()
+WITH
+NO DATA;
+
+GRANT
+EXECUTE ON FUNCTION pgmonitor.pgmonitor_reset_pg_stat_statements TO pgmonitor;
+
 ALTER MATERIALIZED VIEW pgmonitor.pg_stat_statements_history OWNER TO pgmonitor;
+
 CREATE OR REPLACE FUNCTION public.pgmonitor_get_extensions() RETURNS TABLE (
     extension_name text,
     extension_version text,
@@ -199,7 +227,10 @@ FROM pg_catalog.pg_extension pe
   JOIN pg_catalog.pg_namespace pn ON pe.extnamespace = pn.oid
 WHERE pn.nspname NOT IN ('pg_toast', 'pg_catalog', 'information_schema');
 $$ LANGUAGE sql STABLE SECURITY DEFINER;
-GRANT EXECUTE ON FUNCTION public.pgmonitor_get_extensions TO pgmonitor;
+
+GRANT
+EXECUTE ON FUNCTION public.pgmonitor_get_extensions TO pgmonitor;
+
 CREATE OR REPLACE FUNCTION public.pgmonitor_table_statistics() RETURNS TABLE (
     schema_name text,
     table_name text,
@@ -267,4 +298,6 @@ FROM user_tables ut
   AND t.relname = ut.table_name;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-GRANT EXECUTE ON FUNCTION public.pgmonitor_table_statistics TO pgmonitor;
+
+GRANT
+EXECUTE ON FUNCTION public.pgmonitor_table_statistics TO pgmonitor;

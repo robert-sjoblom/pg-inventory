@@ -1,10 +1,21 @@
-.PHONY: dependencies build local
+.PHONY: start-local stop-local format-sql
+
+COMPOSE_PROJECT := pginventory
+COMPOSE_DIR := local_dev
 
 start-local:
-	cd local_dev && chmod 644 init-db.sql && docker-compose build && docker-compose -p pginventory down && docker-compose -f docker-compose.yml -p pginventory up -d --force-recreate --remove-orphans
+	@echo "Starting local PostgreSQL environment..."
+	cd $(COMPOSE_DIR) && \
+		chmod 644 init-db.sql setup-script.sh && \
+		docker-compose build && \
+		docker-compose -p $(COMPOSE_PROJECT) down && \
+		docker-compose -p $(COMPOSE_PROJECT) up -d --force-recreate --remove-orphans
+	@echo "PostgreSQL is running!"
 
 stop-local:
-	cd local_dev && docker-compose -p pginventory down
+	@echo "Stopping local PostgreSQL environment..."
+	cd $(COMPOSE_DIR) && docker-compose -p $(COMPOSE_PROJECT) down
+	@echo "PostgreSQL stopped."
 
 format-sql:
 	@latest_tag=$$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~1); \

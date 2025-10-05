@@ -4,33 +4,33 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
+	"github.com/robert-sjoblom/pg-inventory/internal/cmd"
+	"github.com/robert-sjoblom/pg-inventory/internal/config"
+	"github.com/robert-sjoblom/pg-inventory/internal/inventory"
 )
 
 func main() {
+	rootCmd := cmd.NewRootCommand(runInventory)
+
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runInventory(cfg *config.Config) error {
 	fmt.Println("I have no idea what I'm doing. We'll get there.")
 
-	db, err := sqlx.Connect("postgres", "user=pgmonitor dbname=postgres sslmode=disable password=password port=15432")
+	dbNames, err := inventory.ListDatabases(cfg.ConnString())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to list databases: %w", err)
 	}
 
-	dbNames := []string{}
-	err = db.Select(&dbNames, "SELECT datname FROM pg_database WHERE datistemplate = false;")
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to query database names: %v\n", err)
-		os.Exit(1)
-	}
-
+	fmt.Println("Databases:")
 	for _, name := range dbNames {
-		fmt.Printf("Database: %s\n", name)
+		fmt.Printf("  - %s\n", name)
 	}
 
-	if err := db.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error closing database connection: %v\n", err)
-		os.Exit(1)
-	}
+	return nil
 }

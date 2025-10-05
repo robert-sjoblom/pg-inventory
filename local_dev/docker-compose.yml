@@ -1,0 +1,12 @@
+services:
+  database:
+    image: 'postgres:15-bullseye'
+    ports:
+      - 15432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    volumes:
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./setup-script.sh:/docker-entrypoint-initdb.d/setup-script.sh

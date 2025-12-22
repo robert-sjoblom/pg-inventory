@@ -1,70 +1,71 @@
+version: "2"
+
 run:
-  timeout: 5m
-  tests: true
   modules-download-mode: readonly
 
-output:
-  formats:
-    - format: colored-line-number
-  print-issued-lines: true
-  print-linter-name: true
-  sort-results: true
-
 linters:
+  default: none
   enable:
-    - errcheck # Check for unchecked errors
-    - gosimple # Simplify code
-    - govet # Go vet examines Go source code
-    - ineffassign # Detect ineffectual assignments
-    - staticcheck # Go static analysis
-    - unused # Check for unused constants, variables, functions
-    - gofmt # Check whether code was gofmt-ed
-    - goimports # Check import statements are formatted
-    - misspell # Find commonly misspelled English words
-    - revive # Fast, configurable, extensible, flexible linter
-    - gosec # Security problems
-    - gocritic # Opinionated Go linter
-    - unconvert # Remove unnecessary type conversions
-    - unparam # Find unused function parameters
-    - bodyclose # Check for unclosed HTTP response bodies
-    - gocyclo # Cyclomatic complexity
-    - nilerr # Find code that returns nil even if it checks error
+    - bodyclose
+    - copyloopvar
+    - dupword
+    - durationcheck
+    - errcheck
+    - errorlint
+    - exhaustive
+    - gocritic
+    - govet
+    - ineffassign
+    - misspell
+    - nilerr
+    - nilnil
+    - noctx
+    - prealloc
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck      # includes gosimple
+    - unconvert
+    - unparam
+    - unused
+    - wastedassign
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
+  settings:
+    govet:
+      enable-all: true
+    exhaustive:
+      default-signifies-exhaustive: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: increment-decrement
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
 
-  govet:
-    enable:
-      - shadow
+  exclusions:
+    presets:
+      - common-false-positives
+    generated: lax
 
-  gocyclo:
-    min-complexity: 15
-
-  misspell:
-    locale: US
-
-  revive:
-    rules:
-      - name: exported
-        arguments:
-          - checkPrivateReceivers
-          - disableStutteringCheck
-
-  gosec:
-    excludes:
-      - G104 # Audit errors not checked (covered by errcheck)
+formatters:
+  enable:
+    - gofumpt
 
 issues:
-  exclude-use-default: false
   max-issues-per-linter: 0
   max-same-issues: 0
-
-  exclude-rules:
-    # Exclude some linters from running on tests files
-    - path: _test\.go
-      linters:
-        - gocyclo
-        - errcheck
-        - gosec

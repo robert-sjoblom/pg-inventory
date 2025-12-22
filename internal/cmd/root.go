@@ -1,3 +1,4 @@
+// Package cmd contains commands and args for the binary
 package cmd
 
 import (

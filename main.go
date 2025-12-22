@@ -1,3 +1,4 @@
+// Main entrypoint to the binary
 package main
 
 import (

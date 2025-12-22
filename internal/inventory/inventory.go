@@ -1,3 +1,4 @@
+// Package inventory provides PostgreSQL database discovery and metadata collection.
 package inventory
 
 import (

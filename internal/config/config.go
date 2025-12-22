@@ -1,3 +1,4 @@
+// Package config provides database connection configuration types and utilities.
 package config
 
 import "fmt"
@@ -24,5 +25,4 @@ func (c *Config) ConnString() string {
 		c.SSLMode,
 		c.ApplicationName,
 	)
-
 }

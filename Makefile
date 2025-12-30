@@ -1,4 +1,4 @@
-.PHONY: start-local stop-local format-sql build build-all build-extractor build-collector build-api clean
+.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api clean
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
@@ -29,6 +29,19 @@ format-sql:
 			chmod $$orig_perm "$$file"; \
 		fi; \
 	done
+
+fmt:
+	@echo "Formatting Go code..."
+	go fmt ./...
+	@echo "Format complete."
+
+lint:
+	@echo "Linting Go code..."
+	golangci-lint run ./...
+	@echo "Lint complete."
+
+check: fmt lint
+	@echo "All checks complete."
 
 build-all: build-extractor build-collector build-api
 	@echo "All binaries built in $(BIN_DIR)/"

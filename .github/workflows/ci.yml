@@ -49,13 +49,23 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - name: Build
+      - name: Build all binaries
         run: |
           mkdir -p bin
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/pg-inventory-linux-amd64 .
-          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/pg-inventory-darwin-amd64 .
-          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/pg-inventory-darwin-arm64 .
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o bin/pg-inventory-windows-amd64.exe .
+          echo "Building extractor..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/extractor-linux-amd64 ./cmd/extractor
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/extractor-darwin-amd64 ./cmd/extractor
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/extractor-darwin-arm64 ./cmd/extractor
+          
+          echo "Building collector..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/collector-linux-amd64 ./cmd/collector
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/collector-darwin-amd64 ./cmd/collector
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/collector-darwin-arm64 ./cmd/collector
+          
+          echo "Building api-service..."
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/api-service-linux-amd64 ./cmd/api-service
+          GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/api-service-darwin-amd64 ./cmd/api-service
+          GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/api-service-darwin-arm64 ./cmd/api-service
       - uses: actions/upload-artifact@v4
         with:
           name: binaries

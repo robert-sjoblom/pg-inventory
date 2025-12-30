@@ -1,7 +1,8 @@
-.PHONY: start-local stop-local format-sql
+.PHONY: start-local stop-local format-sql build build-all build-extractor build-collector build-api clean
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
+BIN_DIR := bin
 
 start-local:
 	@echo "Starting local PostgreSQL environment..."
@@ -28,3 +29,28 @@ format-sql:
 			chmod $$orig_perm "$$file"; \
 		fi; \
 	done
+
+build-all: build-extractor build-collector build-api
+	@echo "All binaries built in $(BIN_DIR)/"
+
+build-extractor:
+	@echo "Building extractor..."
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/extractor ./cmd/extractor
+
+build-collector:
+	@echo "Building collector..."
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/collector ./cmd/collector
+
+build-api:
+	@echo "Building api-service..."
+	@mkdir -p $(BIN_DIR)
+	go build -o $(BIN_DIR)/api-service ./cmd/api-service
+
+build: build-all
+
+clean:
+	@echo "Cleaning build artifacts..."
+	rm -rf $(BIN_DIR)
+	@echo "Clean complete."

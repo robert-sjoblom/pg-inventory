@@ -1,4 +1,4 @@
-.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean
+.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
@@ -29,6 +29,11 @@ format-sql:
 			chmod $$orig_perm "$$file"; \
 		fi; \
 	done
+
+test:
+	@echo "Running unit tests..."
+	go test -v ./...
+	@echo "Tests complete."
 
 fmt:
 	@echo "Formatting Go code..."

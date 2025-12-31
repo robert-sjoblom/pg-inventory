@@ -1,0 +1,18 @@
+syntax = "proto3";
+package extractor.v1;
+option go_package = "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1;extractorv1";
+
+message Database {
+    string name = 1;
+    uint32 oid = 2;
+}
+
+message ListDatabasesRequest {}
+
+message ListDatabasesResponse {
+    repeated Database databases = 1;
+}
+
+service ExtractorService {
+    rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse);
+}

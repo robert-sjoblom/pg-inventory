@@ -2,14 +2,36 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"os"
+	"net"
+
+	"google.golang.org/grpc"
+
+	extractorv1 "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1"
+	"github.com/robert-sjoblom/pg-inventory/internal/extractor"
 )
 
 func main() {
 	fmt.Println("PostgreSQL Inventory Extractor")
-	// TODO: Load config
-	log.Println("Extractor service starting...")
-	os.Exit(0)
+
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(context.Background(), "tcp", ":50051")
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	grpcServer := grpc.NewServer()
+	extractorv1.RegisterExtractorServiceServer(grpcServer, newServer())
+	registerDev(grpcServer)
+
+	log.Println("Extractor service listening on :50051")
+	if err := grpcServer.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
+}
+
+func newServer() *extractor.Server {
+	return &extractor.Server{}
 }

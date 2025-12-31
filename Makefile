@@ -30,11 +30,6 @@ format-sql:
 		fi; \
 	done
 
-test:
-	@echo "Running unit tests..."
-	go test -v ./...
-	@echo "Tests complete."
-
 fmt:
 	@echo "Formatting Go code..."
 	go fmt ./...
@@ -44,6 +39,11 @@ lint:
 	@echo "Linting Go code..."
 	golangci-lint run ./...
 	@echo "Lint complete."
+
+test:
+	@echo "Running unit tests..."
+	go test -v ./...
+	@echo "Tests complete."
 
 check: fmt lint
 	@echo "All checks complete."

@@ -20,12 +20,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: ./.github/actions/setup-protoc
-      - uses: actions/upload-artifact@v4
+      - uses: actions/cache@v4
+        id: proto-cache
         with:
-          name: generated-code
           path: gen/
-          retention-days: 1
+          key: proto-${{ hashFiles('api/**/*.proto') }}
+      - if: steps.proto-cache.outputs.cache-hit != 'true'
+        uses: ./.github/actions/setup-protoc
 
   lint:
     needs: generate
@@ -40,10 +41,11 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: generated-code
           path: gen/
+          key: proto-${{ hashFiles('api/**/*.proto') }}
+          fail-on-cache-miss: true
       - uses: golangci/golangci-lint-action@v7
         with:
           version: "v2.7.2"
@@ -56,10 +58,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: generated-code
           path: gen/
+          key: proto-${{ hashFiles('api/**/*.proto') }}
+          fail-on-cache-miss: true
       - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
       - uses: codecov/codecov-action@v4
         with:
@@ -74,10 +77,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: generated-code
           path: gen/
+          key: proto-${{ hashFiles('api/**/*.proto') }}
+          fail-on-cache-miss: true
       - name: Build all binaries
         run: |
           mkdir -p bin

@@ -1,4 +1,4 @@
-.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api clean
+.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
@@ -43,7 +43,7 @@ lint:
 check: fmt lint
 	@echo "All checks complete."
 
-build-all: build-extractor build-collector build-api
+build-all: build-extractor build-collector build-api proto
 	@echo "All binaries built in $(BIN_DIR)/"
 
 build-extractor:
@@ -60,6 +60,17 @@ build-api:
 	@echo "Building api-service..."
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/api-service ./cmd/api-service
+
+proto:
+	@echo "Compiling protobuf..."
+	@mkdir -p gen/extractor/v1
+	protoc \
+		--go_out=gen \
+		--go_opt=module=github.com/robert-sjoblom/pg-inventory/gen \
+		--go-grpc_out=gen \
+		--go-grpc_opt=module=github.com/robert-sjoblom/pg-inventory/gen \
+		--proto_path=. api/extractor/v1/extractor.proto
+	@echo "Proto files generated"
 
 build: build-all
 

@@ -25,6 +25,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: false
+      - uses: ./.github/actions/setup-protoc
       - uses: golangci/golangci-lint-action@v7
         with:
           version: "v2.7.2"
@@ -36,6 +37,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: ./.github/actions/setup-protoc
       - run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
       - uses: codecov/codecov-action@v4
         with:
@@ -49,6 +51,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+      - uses: ./.github/actions/setup-protoc
       - name: Build all binaries
         run: |
           mkdir -p bin

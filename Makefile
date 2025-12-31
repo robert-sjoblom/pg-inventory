@@ -51,6 +51,11 @@ build-extractor:
 	@mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/extractor ./cmd/extractor
 
+build-extractor-dev:
+	@echo "Building extractor (dev mode with reflection)..."
+	@mkdir -p $(BIN_DIR)
+	go build -tags dev -o $(BIN_DIR)/extractor ./cmd/extractor
+
 build-collector:
 	@echo "Building collector..."
 	@mkdir -p $(BIN_DIR)

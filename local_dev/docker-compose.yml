@@ -50,19 +50,20 @@ services:
   #     timeout: 5s
   #     retries: 5
 
+  # TODO: enable this when minio is enabled.
   # Create bucket for pgBackRest on startup
-  minio-init:
-    image: minio/mc:latest
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin;
-      mc mb local/pgbackrest --ignore-existing;
-      mc anonymous set none local/pgbackrest;
-      echo 'Bucket pgbackrest created';
-      "
+  # minio-init:
+  #   image: minio/mc:latest
+  #   depends_on:
+  #     minio:
+  #       condition: service_healthy
+  #   entrypoint: >
+  #     /bin/sh -c "
+  #     mc alias set local http://minio:9000 minioadmin minioadmin;
+  #     mc mb local/pgbackrest --ignore-existing;
+  #     mc anonymous set none local/pgbackrest;
+  #     echo 'Bucket pgbackrest created';
+  #     "
 
   pg-primary:
     image: postgres:15-bullseye
@@ -82,8 +83,7 @@ services:
       # TLS certificates (mounted to temp location, copied with correct ownership)
       - ./certs:/certs-source:ro
       # Init scripts (run in alphabetical order)
-      - ./target/sql:/docker-entrypoint-initdb.d/sql:ro
-      - ./target/primary/init-replication.sh:/docker-entrypoint-initdb.d/zz-init-replication.sh:ro
+      - ./target/primary/sql:/docker-entrypoint-initdb.d:ro
     entrypoint: >
       /bin/bash -c "
       mkdir -p /var/lib/postgresql/certs &&

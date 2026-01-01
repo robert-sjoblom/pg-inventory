@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -9,8 +10,14 @@ import (
 
 func TestListDatabases(t *testing.T) {
 	ctx := context.Background()
-	pool, err := pgxpool.New(ctx, "postgres://postgres:postgres@localhost:5433/postgres")
 
+	connStr := os.Getenv("TEST_DB_URL")
+	if connStr == "" {
+		// TODO: fix this when we have testcontainers
+		t.Skip("postgres not available")
+	}
+
+	pool, err := pgxpool.New(ctx, connStr)
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
 	}
@@ -20,7 +27,6 @@ func TestListDatabases(t *testing.T) {
 	store := NewStore(pool)
 
 	databases, err := store.ListDatabases(ctx)
-
 	if err != nil {
 		t.Fatalf("ListDatabases failed: %v", err)
 	}
@@ -36,8 +42,8 @@ func TestListDatabases(t *testing.T) {
 			if db.Oid == 0 {
 				t.Error("postgres database has invalid OID 0")
 			}
+			break
 		}
-		break
 	}
 
 	if !found {

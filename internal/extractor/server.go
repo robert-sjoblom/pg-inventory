@@ -6,6 +6,8 @@ import (
 
 	extractorv1 "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/store"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Server struct {
@@ -22,7 +24,7 @@ func NewServer(s *store.Store) *Server {
 func (s *Server) ListDatabases(ctx context.Context, req *extractorv1.ListDatabasesRequest) (*extractorv1.ListDatabasesResponse, error) {
 	dbs, err := s.store.ListDatabases(ctx)
 	if err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.Internal, "failed to list databases: %v", err)
 	}
 
 	databases := make([]*extractorv1.Database, 0, len(dbs))

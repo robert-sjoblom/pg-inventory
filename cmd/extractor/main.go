@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
 
 	"google.golang.org/grpc"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	extractorv1 "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor"
+	"github.com/robert-sjoblom/pg-inventory/internal/extractor/store"
 )
 
 func main() {
@@ -22,16 +25,25 @@ func main() {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Fatalf("DATABASE_URL not set")
+	}
+	pool, err := pgxpool.New(context.Background(), connStr)
+	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+
+	defer pool.Close()
+
+	st := store.NewStore(pool)
+
 	grpcServer := grpc.NewServer()
-	extractorv1.RegisterExtractorServiceServer(grpcServer, newServer())
+	extractorv1.RegisterExtractorServiceServer(grpcServer, extractor.NewServer(st))
 	registerDev(grpcServer)
 
 	log.Println("Extractor service listening on :50051")
 	if err := grpcServer.Serve(lis); err != nil {
-		log.Fatalf("failed to serve: %v", err)
+		log.Printf("failed to serve: %v", err)
 	}
-}
-
-func newServer() *extractor.Server {
-	return &extractor.Server{}
 }

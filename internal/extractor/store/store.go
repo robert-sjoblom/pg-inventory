@@ -5,7 +5,7 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/robert-sjoblom/pg-inventory/internal/extractor"
+	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
 )
 
 type Store struct {
@@ -18,7 +18,7 @@ func NewStore(p *pgxpool.Pool) *Store {
 	}
 }
 
-func (s *Store) ListDatabases(ctx context.Context) ([]extractor.Database, error) {
+func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
 	rows, err := s.pool.Query(ctx, "SELECT datname, oid FROM pg_database")
 	if err != nil {
 		return nil, err
@@ -26,9 +26,9 @@ func (s *Store) ListDatabases(ctx context.Context) ([]extractor.Database, error)
 
 	defer rows.Close()
 
-	var databases []extractor.Database
+	var databases []types.Database
 	for rows.Next() {
-		var db extractor.Database
+		var db types.Database
 		err := rows.Scan(&db.Name, &db.Oid)
 		if err != nil {
 			return nil, err

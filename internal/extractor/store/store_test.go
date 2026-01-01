@@ -11,7 +11,7 @@ import (
 func TestListDatabases(t *testing.T) {
 	ctx := context.Background()
 
-	connStr := os.Getenv("TEST_DB_URL")
+	connStr := os.Getenv("DATABASE_URL")
 	if connStr == "" {
 		// TODO: fix this when we have testcontainers
 		t.Skip("postgres not available")

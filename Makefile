@@ -1,22 +1,47 @@
-.PHONY: start-local stop-local format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
+.PHONY: start-local stop-local local-certs local-clean local-logs local-status format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
 BIN_DIR := bin
 
-start-local:
-	@echo "Starting local PostgreSQL environment..."
-	cd $(COMPOSE_DIR) && \
-		chmod 644 init-db.sql setup-script.sh && \
-		docker-compose build && \
-		docker-compose -p $(COMPOSE_PROJECT) down && \
-		docker-compose -p $(COMPOSE_PROJECT) up -d --force-recreate --remove-orphans
-	@echo "PostgreSQL is running!"
+local-certs:
+	@echo "Generating TLS certificates..."
+	@$(COMPOSE_DIR)/scripts/generate-certs.sh
+	@echo "Certificates ready."
+
+start-local: local-certs
+	@echo "Starting local environment..."
+	cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) up -d
+	@echo ""
+	@echo "Services:"
+	@echo "  Catalog (TimescaleDB): localhost:5432"
+	@echo "  Primary:              localhost:5433"
+	@echo "  Replica 1:            localhost:5434"
+	@echo "  Replica 2:            localhost:5435"
+	@echo "  MinIO Console:        http://localhost:9001"
+	@echo ""
+	@echo "Connect as pgmonitor (with client cert):"
+	@echo "  psql \"host=localhost port=5433 dbname=postgres user=pgmonitor sslmode=verify-full sslcert=$(COMPOSE_DIR)/certs/client.crt sslkey=$(COMPOSE_DIR)/certs/client.key sslrootcert=$(COMPOSE_DIR)/certs/ca.crt\""
 
 stop-local:
-	@echo "Stopping local PostgreSQL environment..."
-	cd $(COMPOSE_DIR) && docker-compose -p $(COMPOSE_PROJECT) down
-	@echo "PostgreSQL stopped."
+	@echo "Stopping local environment..."
+	cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) down
+	@echo "Stopped."
+
+local-clean:
+	@echo "Stopping and removing volumes..."
+	cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) down -v
+	@echo "Clean. Run 'make start-local' to recreate."
+
+local-logs:
+	cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) logs -f
+
+local-status:
+	@echo "==> Container status"
+	@cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) ps
+	@echo ""
+	@echo "==> Replication status (primary)"
+	@docker exec pg-inventory-primary psql -U postgres -c "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;" 2>/dev/null || echo "(primary not ready)"
 
 format-sql:
 	@latest_tag=$$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~1); \

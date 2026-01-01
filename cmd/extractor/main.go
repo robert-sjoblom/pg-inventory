@@ -29,8 +29,15 @@ func main() {
 	if connStr == "" {
 		log.Fatalf("DATABASE_URL not set")
 	}
+
 	pool, err := pgxpool.New(context.Background(), connStr)
 	if err != nil {
+		log.Fatalf("failed to connect to database: %v", err)
+	}
+
+	// TODO: we need to check if the db is available, as in the original program
+	// we don't want to spam connection attempts if the db is shutdown.
+	if err := pool.Ping(context.Background()); err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
 

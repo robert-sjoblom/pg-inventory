@@ -70,6 +70,11 @@ test:
 	go test -v ./...
 	@echo "Tests complete."
 
+test-integration:
+	@echo "Running integration tests..."
+	go test -tags=integration -v ./...
+	@echo "Integration tests complete."
+
 check: fmt lint
 	@echo "All checks complete."
 

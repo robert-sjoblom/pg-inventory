@@ -69,6 +69,21 @@ jobs:
           files: ./coverage.out
         continue-on-error: true
 
+  test-integration:
+    needs: generate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: gen/
+          key: proto-${{ hashFiles('api/**/*.proto') }}
+          fail-on-cache-miss: true
+      - run: go test -tags=integration -v ./...
+
   build:
     needs: generate
     runs-on: ubuntu-latest
@@ -89,12 +104,12 @@ jobs:
           GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/extractor-linux-amd64 ./cmd/extractor
           GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/extractor-darwin-amd64 ./cmd/extractor
           GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/extractor-darwin-arm64 ./cmd/extractor
-          
+
           echo "Building collector..."
           GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/collector-linux-amd64 ./cmd/collector
           GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/collector-darwin-amd64 ./cmd/collector
           GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o bin/collector-darwin-arm64 ./cmd/collector
-          
+
           echo "Building api-service..."
           GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o bin/api-service-linux-amd64 ./cmd/api-service
           GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o bin/api-service-darwin-amd64 ./cmd/api-service

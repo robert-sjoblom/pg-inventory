@@ -119,3 +119,50 @@ func TestIsValidSSLSettings(t *testing.T) {
 		})
 	}
 }
+
+func TestLogLevel(t *testing.T) {
+	tests := []struct {
+		name    string
+		level   string
+		wantErr bool
+	}{
+		{
+			name:    "debug is ok",
+			level:   "debug",
+			wantErr: false,
+		},
+		{
+			name:    "uppercase INFO is ok",
+			level:   "INFO",
+			wantErr: false,
+		},
+		{
+			name:    "warn is ok",
+			level:   "warn",
+			wantErr: false,
+		},
+		{
+			name:    "error is ok",
+			level:   "error",
+			wantErr: false,
+		},
+		{
+			name:    "foo is not ok",
+			level:   "foo",
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := Config{
+				logLevel: tt.level,
+			}
+
+			_, err := config.LogLevel()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("wantErr %v, got %v", tt.wantErr, err)
+			}
+		})
+	}
+}

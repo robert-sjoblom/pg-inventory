@@ -4,14 +4,17 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
+	"strings"
 )
 
 // Holds all the config for the extractor application; can in turn create derived
 // structs, such as DbCredentials
 type Config struct {
 	ListenAddr string
+	logLevel   string
 	DbCredentials
 }
 
@@ -25,6 +28,7 @@ func NewConfig() *Config {
 	dbSslkey := flag.String("db-sslkey", "", "path to SSL key")
 	dbSslrootcert := flag.String("db-sslrootcert", "", "path to root CA cert")
 	listenAddr := flag.String("listen", ":50051", "listen address (default :50051)")
+	logLevel := flag.String("log-level", "info", "log level, choose between [debug, info, warn, error] (default info)")
 
 	flag.Parse()
 
@@ -39,6 +43,7 @@ func NewConfig() *Config {
 			dbSSLKey:      *dbSslkey,
 			dbSSLRootCert: *dbSslrootcert,
 		},
+		logLevel:   *logLevel,
 		ListenAddr: *listenAddr,
 	}
 }
@@ -60,6 +65,21 @@ func (c *Config) NewCredentials() (*DbCredentials, error) {
 	}
 
 	return &c.DbCredentials, nil
+}
+
+func (c *Config) LogLevel() (slog.Level, error) {
+	switch strings.ToLower(c.logLevel) {
+	case "debug":
+		return slog.LevelDebug, nil
+	case "info":
+		return slog.LevelInfo, nil
+	case "warn":
+		return slog.LevelWarn, nil
+	case "error":
+		return slog.LevelError, nil
+	default:
+		return 0, fmt.Errorf("log-level must be one of [debug, info, warn, error], got: %v", c.logLevel)
+	}
 }
 
 // Generate a certificate-based connection string for the default (Config) database

@@ -10,7 +10,7 @@ import (
 )
 
 func TestDbConnStrWithSslMode(t *testing.T) {
-	db_credentials := DbCredentials{
+	dbCredentials := DbCredentials{
 		dbHost:        "localhost",
 		dbPort:        5432,
 		dbUser:        "testuser",
@@ -21,7 +21,7 @@ func TestDbConnStrWithSslMode(t *testing.T) {
 		dbSSLRootCert: "/path/to/ca.crt",
 	}
 
-	actual := db_credentials.ConnStr()
+	actual := dbCredentials.ConnStr()
 	expected := "postgres://testuser@localhost:5432/testdb?sslcert=%2Fpath%2Fto%2Fcert.crt&sslkey=%2Fpath%2Fto%2Fkey.key&sslmode=verify-full&sslrootcert=%2Fpath%2Fto%2Fca.crt"
 
 	assert.Equal(t, expected, actual, "correct conn string for ssl mode")
@@ -46,8 +46,22 @@ func TestDbConnStrWitoutSsl(t *testing.T) {
 }
 
 func TestIsValidSSLSettings(t *testing.T) {
-	certFile := filepath.Join(t.TempDir(), "cert.crt")
+	tempDir := t.TempDir()
+
+	certFile := filepath.Join(tempDir, "cert.crt")
 	err := os.WriteFile(certFile, []byte("fake cert"), 0o600)
+	if err != nil {
+		log.Fatalf("could not write tempfile: %v", err)
+	}
+
+	keyFile := filepath.Join(tempDir, "key.key")
+	err = os.WriteFile(keyFile, []byte("fake key"), 0o600)
+	if err != nil {
+		log.Fatalf("could not write tempfile: %v", err)
+	}
+
+	rootCertFile := filepath.Join(tempDir, "ca.crt")
+	err = os.WriteFile(rootCertFile, []byte("fake root cert"), 0o600)
 	if err != nil {
 		log.Fatalf("could not write tempfile: %v", err)
 	}
@@ -66,6 +80,11 @@ func TestIsValidSSLSettings(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "require mode without certs",
+			sslmode: "require",
+			wantErr: false,
+		},
+		{
 			name:        "emptry string when not disabled",
 			sslmode:     "verify-full",
 			sslcert:     "",
@@ -77,8 +96,8 @@ func TestIsValidSSLSettings(t *testing.T) {
 			name:        "cert present when not disabled",
 			sslmode:     "verify-full",
 			sslcert:     certFile,
-			sslkey:      certFile,
-			sslrootcert: certFile,
+			sslkey:      keyFile,
+			sslrootcert: rootCertFile,
 			wantErr:     false,
 		},
 		{

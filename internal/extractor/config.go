@@ -11,15 +11,8 @@ import (
 // Holds all the config for the extractor application; can in turn create derived
 // structs, such as DbCredentials
 type Config struct {
-	dbHost        string
-	dbUser        string
-	dbName        string
-	dbSSLMode     string
-	dbSSLCert     string
-	dbSSLKey      string
-	dbSSLRootCert string
-	ListenAddr    string
-	dbPort        int
+	ListenAddr string
+	DbCredentials
 }
 
 func NewConfig() *Config {
@@ -36,15 +29,17 @@ func NewConfig() *Config {
 	flag.Parse()
 
 	return &Config{
-		dbHost:        *dbHost,
-		dbPort:        *dbPort,
-		dbUser:        *dbUser,
-		dbName:        *dbName,
-		dbSSLMode:     *dbSslmode,
-		dbSSLCert:     *dbSslcert,
-		dbSSLKey:      *dbSslkey,
-		dbSSLRootCert: *dbSslrootcert,
-		ListenAddr:    *listenAddr,
+		DbCredentials: DbCredentials{
+			dbHost:        *dbHost,
+			dbPort:        *dbPort,
+			dbUser:        *dbUser,
+			dbName:        *dbName,
+			dbSSLMode:     *dbSslmode,
+			dbSSLCert:     *dbSslcert,
+			dbSSLKey:      *dbSslkey,
+			dbSSLRootCert: *dbSslrootcert,
+		},
+		ListenAddr: *listenAddr,
 	}
 }
 
@@ -64,16 +59,7 @@ func (c *Config) NewCredentials() (*DbCredentials, error) {
 		return nil, err
 	}
 
-	return &DbCredentials{
-		dbHost:        c.dbHost,
-		dbPort:        c.dbPort,
-		dbUser:        c.dbUser,
-		dbName:        c.dbName,
-		dbSSLMode:     c.dbSSLMode,
-		dbSSLCert:     c.dbSSLCert,
-		dbSSLKey:      c.dbSSLKey,
-		dbSSLRootCert: c.dbSSLRootCert,
-	}, nil
+	return &c.DbCredentials, nil
 }
 
 // Generate a certificate-based connection string for the default (Config) database
@@ -93,7 +79,9 @@ func (d *DbCredentials) ConnStrForDb(dbName string) string {
 	q := u.Query()
 	if d.dbSSLMode == "disable" {
 		q.Set("sslmode", "disable")
-	} else {
+	}
+
+	if d.dbSSLMode == "verify-ca" || d.dbSSLMode == "verify-full" {
 		q.Set("sslmode", d.dbSSLMode)
 		q.Set("sslcert", d.dbSSLCert)
 		q.Set("sslkey", d.dbSSLKey)
@@ -112,7 +100,7 @@ func isValidSSLSettings(sslmode, sslcert, sslkey, sslrootcert string) error {
 	}
 
 	if sslcert == "" || sslkey == "" || sslrootcert == "" {
-		return errors.New("SSL certificates are required when SSL mode is not 'disable'")
+		return errors.New("SSL certificates required for verify-ca and verify-full modes")
 	}
 
 	for _, path := range []string{sslcert, sslkey, sslrootcert} {

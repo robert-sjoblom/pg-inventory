@@ -75,11 +75,12 @@ func (c *Config) NewCredentials() (*DbCredentials, error) {
 	}, nil
 }
 
-// Generate a connection string for the default (Config) database
+// Generate a certificate-based connection string for the default (Config) database
 func (d *DbCredentials) ConnStr() string {
 	return d.ConnStrForDb(d.dbName)
 }
 
+// Generate a certificate-based connection string for the given database name
 func (d *DbCredentials) ConnStrForDb(dbName string) string {
 	base := fmt.Sprintf("postgres://%s@%s:%d/%s", d.dbUser, d.dbHost, d.dbPort, dbName)
 

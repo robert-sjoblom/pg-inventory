@@ -22,27 +22,27 @@ type Config struct {
 }
 
 func NewConfig() *Config {
-	db_host := flag.String("db-host", "localhost", "database host to connect to (default localhost)")
-	db_port := flag.Int("db-port", 5432, "the database port to connect to (default 5432)")
-	db_user := flag.String("db-user", "pgmonitor", "the database user to connect with")
-	db_name := flag.String("db-name", "postgres", "the database to connect to (default postgres)")
-	db_sslmode := flag.String("db-sslmode", "verify-full", "SSL mode to use (default verify-full)")
-	db_sslcert := flag.String("db-sslcert", "", "path to SSL certificate")
-	db_sslkey := flag.String("db-sslkey", "", "path to SSL key")
-	db_sslrootcert := flag.String("db-sslrootcert", "", "path to root CA cert")
+	dbHost := flag.String("db-host", "localhost", "database host to connect to (default localhost)")
+	dbPort := flag.Int("db-port", 5432, "the database port to connect to (default 5432)")
+	dbUser := flag.String("db-user", "pgmonitor", "the database user to connect with")
+	dbName := flag.String("db-name", "postgres", "the database to connect to (default postgres)")
+	dbSslmode := flag.String("db-sslmode", "verify-full", "SSL mode to use (default verify-full)")
+	dbSslcert := flag.String("db-sslcert", "", "path to SSL certificate")
+	dbSslkey := flag.String("db-sslkey", "", "path to SSL key")
+	dbSslrootcert := flag.String("db-sslrootcert", "", "path to root CA cert")
 	listenAddr := flag.String("listen", ":50051", "listen address (default :50051)")
 
 	flag.Parse()
 
 	return &Config{
-		dbHost:        *db_host,
-		dbPort:        *db_port,
-		dbUser:        *db_user,
-		dbName:        *db_name,
-		dbSSLMode:     *db_sslmode,
-		dbSSLCert:     *db_sslcert,
-		dbSSLKey:      *db_sslkey,
-		dbSSLRootCert: *db_sslrootcert,
+		dbHost:        *dbHost,
+		dbPort:        *dbPort,
+		dbUser:        *dbUser,
+		dbName:        *dbName,
+		dbSSLMode:     *dbSslmode,
+		dbSSLCert:     *dbSslcert,
+		dbSSLKey:      *dbSslkey,
+		dbSSLRootCert: *dbSslrootcert,
 		ListenAddr:    *listenAddr,
 	}
 }

@@ -22,7 +22,7 @@ func TestDbConnStrWithSslMode(t *testing.T) {
 	}
 
 	actual := db_credentials.ConnStr()
-	expected := "postgres://testuser@localhost:5432/testdb?sslmode=verify-full&sslcert=/path/to/cert.crt&sslkey=/path/to/key.key&sslrootcert=/path/to/ca.crt"
+	expected := "postgres://testuser@localhost:5432/testdb?sslcert=%2Fpath%2Fto%2Fcert.crt&sslkey=%2Fpath%2Fto%2Fkey.key&sslmode=verify-full&sslrootcert=%2Fpath%2Fto%2Fca.crt"
 
 	assert.Equal(t, expected, actual, "correct conn string for ssl mode")
 }

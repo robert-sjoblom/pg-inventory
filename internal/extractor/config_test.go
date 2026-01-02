@@ -93,7 +93,7 @@ func TestIsValidSSLSettings(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := isValidSSLSettings(&tt.sslmode, &tt.sslcert, &tt.sslkey, &tt.sslrootcert)
+			err := isValidSSLSettings(tt.sslmode, tt.sslcert, tt.sslkey, tt.sslrootcert)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("wantErr %v, got %v", tt.wantErr, err)
 			}

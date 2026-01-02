@@ -11,19 +11,19 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-type DbCredentials struct {
+type TestDbCredentials struct {
 	dbuser string
 	dbpass string
 	host   string
 	port   nat.Port
 }
 
-func (d *DbCredentials) ConnStr(db string) string {
+func (d *TestDbCredentials) ConnStr(db string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s", d.dbuser, d.dbpass, d.host, d.port.Port(), db)
 }
 
 // StartPostgres launches a postgres testcontainer instance
-func StartPostgres(t *testing.T) *DbCredentials {
+func StartPostgres(t *testing.T) *TestDbCredentials {
 	t.Helper()
 	ctx := context.Background()
 
@@ -56,7 +56,7 @@ func StartPostgres(t *testing.T) *DbCredentials {
 		t.Fatalf("failed to get pg testcontainer port")
 	}
 
-	return &DbCredentials{
+	return &TestDbCredentials{
 		dbuser: db_user,
 		dbpass: db_pass,
 		host:   host,

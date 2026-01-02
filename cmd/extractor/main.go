@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"os"
 
 	"google.golang.org/grpc"
 
@@ -19,18 +18,20 @@ import (
 func main() {
 	fmt.Println("PostgreSQL Inventory Extractor")
 
+	config := extractor.NewConfig()
+
 	lc := net.ListenConfig{}
-	lis, err := lc.Listen(context.Background(), "tcp", ":50051")
+	lis, err := lc.Listen(context.Background(), "tcp", config.ListenAddr)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
 
-	connStr := os.Getenv("DATABASE_URL")
-	if connStr == "" {
-		log.Fatalf("DATABASE_URL not set")
+	dbCredentials, err := config.NewCredentials()
+	if err != nil {
+		log.Fatalf("failed to parse db credentials from config: %v", err)
 	}
 
-	pool, err := pgxpool.New(context.Background(), connStr)
+	pool, err := pgxpool.New(context.Background(), dbCredentials.ConnStr())
 	if err != nil {
 		log.Fatalf("failed to connect to database: %v", err)
 	}
@@ -49,7 +50,7 @@ func main() {
 	extractorv1.RegisterExtractorServiceServer(grpcServer, extractor.NewServer(st))
 	registerDev(grpcServer)
 
-	log.Println("Extractor service listening on :50051")
+	log.Printf("Extractor service listening on %s", config.ListenAddr)
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Printf("failed to serve: %v", err)
 	}

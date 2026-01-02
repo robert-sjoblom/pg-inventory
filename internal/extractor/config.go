@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/url"
 	"os"
 )
 
@@ -82,15 +83,25 @@ func (d *DbCredentials) ConnStr() string {
 
 // Generate a certificate-based connection string for the given database name
 func (d *DbCredentials) ConnStrForDb(dbName string) string {
-	base := fmt.Sprintf("postgres://%s@%s:%d/%s", d.dbUser, d.dbHost, d.dbPort, dbName)
-
-	if d.dbSSLMode == "disable" {
-		return base + "?sslmode=disable"
+	u := &url.URL{
+		Scheme: "postgres",
+		User:   url.User(d.dbUser),
+		Host:   fmt.Sprintf("%s:%d", d.dbHost, d.dbPort),
+		Path:   dbName,
 	}
 
-	return fmt.Sprintf("%s?sslmode=%s&sslcert=%s&sslkey=%s&sslrootcert=%s",
-		base, d.dbSSLMode, d.dbSSLCert, d.dbSSLKey, d.dbSSLRootCert,
-	)
+	q := u.Query()
+	if d.dbSSLMode == "disable" {
+		q.Set("sslmode", "disable")
+	} else {
+		q.Set("sslmode", d.dbSSLMode)
+		q.Set("sslcert", d.dbSSLCert)
+		q.Set("sslkey", d.dbSSLKey)
+		q.Set("sslrootcert", d.dbSSLRootCert)
+	}
+	u.RawQuery = q.Encode()
+
+	return u.String()
 }
 
 func isValidSSLSettings(sslmode, sslcert, sslkey, sslrootcert string) error {

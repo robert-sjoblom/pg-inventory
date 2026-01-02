@@ -18,6 +18,7 @@ import (
 func main() {
 	fmt.Println("PostgreSQL Inventory Extractor")
 
+	// This calls flag.Parse() behind the scenes
 	config := extractor.NewConfig()
 
 	lc := net.ListenConfig{}

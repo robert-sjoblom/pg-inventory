@@ -59,7 +59,7 @@ type DbCredentials struct {
 }
 
 func (c *Config) NewCredentials() (*DbCredentials, error) {
-	if err := isValidSSLSettings(&c.dbSSLMode, &c.dbSSLCert, &c.dbSSLKey, &c.dbSSLRootCert); err != nil {
+	if err := isValidSSLSettings(c.dbSSLMode, c.dbSSLCert, c.dbSSLKey, c.dbSSLRootCert); err != nil {
 		return nil, err
 	}
 
@@ -92,16 +92,18 @@ func (d *DbCredentials) ConnStrForDb(dbName string) string {
 	)
 }
 
-func isValidSSLSettings(sslmode, sslcert, sslkey, sslrootcert *string) error {
-	if *sslmode == "disable" {
+func isValidSSLSettings(sslmode, sslcert, sslkey, sslrootcert string) error {
+	needsCerts := sslmode == "verify-ca" || sslmode == "verify-full"
+
+	if !needsCerts {
 		return nil
 	}
 
-	if *sslcert == "" || *sslkey == "" || *sslrootcert == "" {
+	if sslcert == "" || sslkey == "" || sslrootcert == "" {
 		return errors.New("SSL certificates are required when SSL mode is not 'disable'")
 	}
 
-	for _, path := range []string{*sslcert, *sslkey, *sslrootcert} {
+	for _, path := range []string{sslcert, sslkey, sslrootcert} {
 		if _, err := os.Stat(path); err != nil {
 			if os.IsNotExist(err) {
 				return fmt.Errorf("SSL certificate file not found: %s", path)

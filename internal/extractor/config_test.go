@@ -1,7 +1,6 @@
 package extractor
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -51,19 +50,19 @@ func TestIsValidSSLSettings(t *testing.T) {
 	certFile := filepath.Join(tempDir, "cert.crt")
 	err := os.WriteFile(certFile, []byte("fake cert"), 0o600)
 	if err != nil {
-		log.Fatalf("could not write tempfile: %v", err)
+		t.Fatalf("could not write tempfile: %v", err)
 	}
 
 	keyFile := filepath.Join(tempDir, "key.key")
 	err = os.WriteFile(keyFile, []byte("fake key"), 0o600)
 	if err != nil {
-		log.Fatalf("could not write tempfile: %v", err)
+		t.Fatalf("could not write tempfile: %v", err)
 	}
 
 	rootCertFile := filepath.Join(tempDir, "ca.crt")
 	err = os.WriteFile(rootCertFile, []byte("fake root cert"), 0o600)
 	if err != nil {
-		log.Fatalf("could not write tempfile: %v", err)
+		t.Fatalf("could not write tempfile: %v", err)
 	}
 
 	tests := []struct {

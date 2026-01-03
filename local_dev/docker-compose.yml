@@ -31,40 +31,6 @@ services:
   #     timeout: 5s
   #     retries: 5
 
-  # TODO: enable this once we're extracting backup data.
-  # minio:
-  #   image: minio/minio:latest
-  #   container_name: pg-inventory-minio
-  #   ports:
-  #     - "9000:9000"   # API
-  #     - "9001:9001"   # Console
-  #   environment:
-  #     MINIO_ROOT_USER: minioadmin
-  #     MINIO_ROOT_PASSWORD: minioadmin
-  #   command: server /data --console-address ":9001"
-  #   volumes:
-  #     - minio-data:/data
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-  #     interval: 5s
-  #     timeout: 5s
-  #     retries: 5
-
-  # TODO: enable this when minio is enabled.
-  # Create bucket for pgBackRest on startup
-  # minio-init:
-  #   image: minio/mc:latest
-  #   depends_on:
-  #     minio:
-  #       condition: service_healthy
-  #   entrypoint: >
-  #     /bin/sh -c "
-  #     mc alias set local http://minio:9000 minioadmin minioadmin;
-  #     mc mb local/pgbackrest --ignore-existing;
-  #     mc anonymous set none local/pgbackrest;
-  #     echo 'Bucket pgbackrest created';
-  #     "
-
   pg-primary:
     image: postgres:15-bullseye
     container_name: pg-inventory-primary
@@ -77,27 +43,57 @@ services:
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
     volumes:
       - primary-data:/var/lib/postgresql/data
+      - primary-pgbackrest-repo:/var/lib/pgbackrest
       # Config files
       - ./target/primary/postgresql.conf:/etc/postgresql/postgresql.conf:ro
       - ./target/primary/pg_hba.conf:/etc/postgresql/pg_hba.conf:ro
+      - ./target/primary/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
       # TLS certificates (mounted to temp location, copied with correct ownership)
       - ./certs:/certs-source:ro
       # Init scripts (run in alphabetical order)
       - ./target/primary/sql:/docker-entrypoint-initdb.d:ro
     entrypoint: >
       /bin/bash -c "
+      apt-get update -qq && apt-get install -y -qq pgbackrest && rm -rf /var/lib/apt/lists/* &&
       mkdir -p /var/lib/postgresql/certs &&
       cp /certs-source/* /var/lib/postgresql/certs/ &&
       chown postgres:postgres /var/lib/postgresql/certs/* &&
       chmod 600 /var/lib/postgresql/certs/*.key &&
       chmod 644 /var/lib/postgresql/certs/*.crt &&
+      mkdir -p /var/log/pgbackrest /var/spool/pgbackrest /var/lib/pgbackrest &&
+      chown -R postgres:postgres /var/log/pgbackrest /var/spool/pgbackrest /var/lib/pgbackrest &&
       exec docker-entrypoint.sh postgres -c config_file=/etc/postgresql/postgresql.conf -c hba_file=/etc/postgresql/pg_hba.conf
       "
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres && psql -U postgres -d postgres -tAc \"SELECT 1 FROM monitoring.cluster_config LIMIT 1\" || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 30s
+
+
+  pgbackrest-client:
+    image: postgres:15-bullseye
+    container_name: pg-inventory-pgbackrest-client
+    depends_on:
+      pg-primary:
+        condition: service_healthy
+    entrypoint: >
+      /bin/bash -c "
+      apt-get update -qq && apt-get install -y -qq pgbackrest && rm -rf /var/lib/apt/lists/* &&
+      exec tail -f /dev/null
+      "
+    volumes:
+      - primary-pgbackrest-repo:/var/lib/pgbackrest
+      - primary-data:/var/lib/postgresql/data:ro
+      - ./target/primary/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+    environment:
+      PGBACKREST_STANZA: main
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGHOST: pg-primary
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
 
   pg-replica1:
     image: postgres:15-bullseye
@@ -177,7 +173,7 @@ services:
 
 volumes:
   catalog-data:
-  minio-data:
   primary-data:
+  primary-pgbackrest-repo:
   replica1-data:
   replica2-data:

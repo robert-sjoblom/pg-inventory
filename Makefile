@@ -1,4 +1,4 @@
-.PHONY: start-local stop-local local-certs local-clean local-logs local-status format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
+.PHONY: start-local stop-local local-certs local-clean local-logs local-status local-pgbackrest-info local-pgbackrest-backup-full local-pgbackrest-backup-incr format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
@@ -12,6 +12,13 @@ local-certs:
 start-local: local-certs
 	@echo "Starting local environment..."
 	cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) up -d
+	@echo ""
+	@echo "Waiting for containers to be ready..."
+	@sleep 5
+	@echo "Creating pgBackRest stanza..."
+	@docker exec -u postgres pg-inventory-primary pgbackrest --stanza=main --log-level-console=info stanza-create 2>/dev/null || echo "(stanza already exists or will retry)"
+	@echo "Running initial full backup..."
+	@docker exec -u postgres pg-inventory-primary pgbackrest --stanza=main --type=full backup 2>/dev/null || echo "(backup will retry later)"
 	@echo ""
 	@echo "Services:"
 	@echo "  Catalog (TimescaleDB): localhost:5432"
@@ -42,6 +49,25 @@ local-status:
 	@echo ""
 	@echo "==> Replication status (primary)"
 	@docker exec pg-inventory-primary psql -U postgres -c "SELECT client_addr, state, sent_lsn, write_lsn, flush_lsn, replay_lsn FROM pg_stat_replication;" 2>/dev/null || echo "(primary not ready)"
+
+local-pgbackrest-info:
+	@echo "==> pgBackRest backup info"
+	@cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) exec pgbackrest-client pgbackrest --stanza=main --output=json info
+
+local-pgbackrest-stanza-create:
+	@echo "==> Creating pgBackRest stanza"
+	@docker exec -u postgres pg-inventory-primary pgbackrest --stanza=main --log-level-console=info stanza-create
+	@echo "Stanza created successfully."
+
+local-pgbackrest-backup-full:
+	@echo "==> Running full backup..."
+	@cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) exec -u postgres pgbackrest-client pgbackrest --stanza=main --type=full backup
+	@echo "Full backup complete."
+
+local-pgbackrest-backup-incr:
+	@echo "==> Running incremental backup..."
+	@cd $(COMPOSE_DIR) && docker compose -p $(COMPOSE_PROJECT) exec -u postgres pgbackrest-client pgbackrest --stanza=main --type=incr backup
+	@echo "Incremental backup complete."
 
 format-sql:
 	@latest_tag=$$(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~1); \

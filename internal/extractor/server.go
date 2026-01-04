@@ -37,3 +37,47 @@ func (s *Server) ListDatabases(ctx context.Context, req *extractorv1.ListDatabas
 
 	return &extractorv1.ListDatabasesResponse{Databases: databases}, nil
 }
+
+func (s *Server) ListBackups(ctx context.Context, req *extractorv1.ListBackupsRequest) (*extractorv1.ListBackupsResponse, error) {
+	pgbackrestInfo, err := s.store.ListBackups(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "%v", err)
+	}
+
+	if len(pgbackrestInfo) == 0 {
+		return nil, status.Errorf(codes.NotFound, "no stanza found")
+	}
+
+	info := pgbackrestInfo[0]
+	if len(info.Db) == 0 {
+		return nil, status.Errorf(codes.Internal, "pgbackrest info is not complete, missing db field")
+	}
+
+	dbVersion := info.Db[0].Version
+	if dbVersion == "" {
+		return nil, status.Errorf(codes.Internal, "could not extract PG version from pgbackrest info")
+	}
+
+	stanza := info.Name
+	backups := info.Backup
+
+	backupInfo := make([]*extractorv1.BackupInfo, 0, len(backups))
+	for _, backup := range backups {
+		backupInfo = append(backupInfo, &extractorv1.BackupInfo{
+			Label:           backup.Label,
+			Type:            backup.Type,
+			TimestampStart:  backup.Timestamp.Start,
+			TimestampStop:   backup.Timestamp.Stop,
+			BackupSize:      backup.Info.Size,
+			RepoSize:        backup.Info.Repository.Size,
+			DatabaseVersion: dbVersion,
+			Error:           backup.Error,
+			RepoKey:         uint32(backup.Database.RepoKey),
+		})
+	}
+
+	return &extractorv1.ListBackupsResponse{
+		Stanza:  stanza,
+		Backups: backupInfo,
+	}, nil
+}

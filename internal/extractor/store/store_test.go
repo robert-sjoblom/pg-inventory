@@ -7,7 +7,7 @@ import (
 )
 
 func TestListDatabases(t *testing.T) {
-	ctx, pool := testutil.InitializePostgresPool(t)
+	ctx, pool := testutil.SetupStore(t)
 	store := NewStore(pool)
 
 	databases, err := store.ListDatabases(ctx)

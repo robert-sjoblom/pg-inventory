@@ -12,6 +12,20 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+type setupConfig struct {
+	clusterName string
+	stanza      string
+}
+
+type SetupOption func(*setupConfig)
+
+func WithClusterConfig(clusterName, stanza string) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.clusterName = clusterName
+		cfg.stanza = stanza
+	}
+}
+
 type TestDbCredentials struct {
 	dbuser string
 	dbpass string
@@ -24,7 +38,7 @@ func (d *TestDbCredentials) ConnStr(db string) string {
 }
 
 // StartPostgres launches a postgres testcontainer instance
-func StartPostgres(t *testing.T) *TestDbCredentials {
+func StartPostgres(t *testing.T, opts ...SetupOption) *TestDbCredentials {
 	t.Helper()
 	ctx := context.Background()
 
@@ -35,6 +49,7 @@ func StartPostgres(t *testing.T) *TestDbCredentials {
 		postgres.WithDatabase("testdb"),
 		postgres.WithUsername(db_user),
 		postgres.WithPassword(db_pass),
+		postgres.WithInitScripts("testdata/setup/00-monitoring.sql"),
 		postgres.BasicWaitStrategies(),
 	)
 	t.Cleanup(func() {
@@ -57,20 +72,35 @@ func StartPostgres(t *testing.T) *TestDbCredentials {
 		t.Fatalf("failed to get pg testcontainer port")
 	}
 
-	return &TestDbCredentials{
+	cfg := &setupConfig{
+		clusterName: "test-cluster",
+		stanza:      "test-stanza",
+	}
+
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	credentials := &TestDbCredentials{
 		dbuser: db_user,
 		dbpass: db_pass,
 		host:   host,
 		port:   port,
 	}
+
+	if err := applySetupConfiguration(ctx, t, credentials, cfg); err != nil {
+		t.Fatalf("failed to apply test configuration to database: %v", err)
+	}
+
+	return credentials
 }
 
-func InitializePostgresPool(t *testing.T) (context.Context, *pgxpool.Pool) {
+func SetupStore(t *testing.T, opts ...SetupOption) (context.Context, *pgxpool.Pool) {
 	t.Helper()
 
 	ctx := context.Background()
 
-	credentials := StartPostgres(t)
+	credentials := StartPostgres(t, opts...)
 	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
 	if err != nil {
 		t.Fatalf("Database connection failed: %v", err)
@@ -79,4 +109,25 @@ func InitializePostgresPool(t *testing.T) (context.Context, *pgxpool.Pool) {
 	t.Cleanup(func() { pool.Close() })
 
 	return ctx, pool
+}
+
+func applySetupConfiguration(ctx context.Context, t *testing.T, credentials *TestDbCredentials, cfg *setupConfig) error {
+	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
+	if err != nil {
+		return err
+	}
+
+	defer pool.Close()
+
+	_, err = pool.Exec(ctx, "UPDATE monitoring.cluster_config SET value = $1 WHERE key = 'cluster_name'", cfg.clusterName)
+	if err != nil {
+		return err
+	}
+
+	_, err = pool.Exec(ctx, "UPDATE monitoring.cluster_config SET value = $1 WHERE key = 'stanza'", cfg.stanza)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

@@ -1,26 +1,13 @@
-//go:build integration
-
 package store
 
 import (
-	"context"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robert-sjoblom/pg-inventory/internal/testutil"
 )
 
 func TestListDatabases(t *testing.T) {
-	ctx := context.Background()
-
-	credentials := testutil.StartPostgres(t)
-	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
-	if err != nil {
-		t.Fatalf("Database connection failed: %v", err)
-	}
-
-	defer pool.Close()
-
+	ctx, pool := testutil.InitializePostgresPool(t)
 	store := NewStore(pool)
 
 	databases, err := store.ListDatabases(ctx)
@@ -46,5 +33,4 @@ func TestListDatabases(t *testing.T) {
 	if !found {
 		t.Error("expected to 'testdb' database")
 	}
-
 }

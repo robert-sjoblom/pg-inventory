@@ -10,6 +10,12 @@ INSERT INTO
 VALUES
     ('cluster_name', 'main') ON CONFLICT (key) DO NOTHING;
 
+-- pgBackRest stanza name
+INSERT INTO
+    monitoring.cluster_config (key, value)
+VALUES
+    ('stanza', 'main') ON CONFLICT (key) DO NOTHING;
+
 -- Force WAL switch to trigger archive_command and verify it works
 SELECT
     pg_switch_wal ();

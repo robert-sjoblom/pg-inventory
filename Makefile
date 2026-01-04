@@ -1,4 +1,4 @@
-.PHONY: start-local stop-local local-certs local-clean local-logs local-status local-pgbackrest-info local-pgbackrest-backup-full local-pgbackrest-backup-incr format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test
+.PHONY: start-local stop-local local-certs local-clean local-logs local-status local-pgbackrest-info local-pgbackrest-backup-full local-pgbackrest-backup-incr format-sql fmt lint check build build-all build-extractor build-collector build-api proto clean test run-extractor-local
 
 COMPOSE_PROJECT := pginventory
 COMPOSE_DIR := local_dev
@@ -25,7 +25,7 @@ start-local: local-certs
 	@echo "  Primary:              localhost:5433"
 	@echo "  Replica 1:            localhost:5434"
 	@echo "  Replica 2:            localhost:5435"
-	@echo "  MinIO Console:        http://localhost:9001"
+	@echo "  pgBackRest Client:    (container: pgbackrest-client)"
 	@echo ""
 	@echo "Connect as pgmonitor (with client cert):"
 	@echo "  psql \"host=localhost port=5433 dbname=postgres user=pgmonitor sslmode=verify-full sslcert=$(COMPOSE_DIR)/certs/client.crt sslkey=$(COMPOSE_DIR)/certs/client.key sslrootcert=$(COMPOSE_DIR)/certs/ca.crt\""
@@ -144,3 +144,20 @@ clean:
 	@echo "Cleaning build artifacts..."
 	rm -rf $(BIN_DIR)
 	@echo "Clean complete."
+
+run-extractor-local:
+	@echo "Running extractor with pgbackrest wrapper..."
+	@if [ ! -f $(BIN_DIR)/extractor ]; then \
+		echo "Error: extractor binary not found. Run 'make build-extractor-dev' first."; \
+		exit 1; \
+	fi
+	PATH=$(PWD)/$(COMPOSE_DIR)/scripts:$$PATH $(BIN_DIR)/extractor \
+		-db-host=localhost \
+		-db-port=5433 \
+		-db-user=pgmonitor \
+		-db-name=postgres \
+		-db-sslmode=verify-full \
+		-db-sslcert=$(COMPOSE_DIR)/certs/client.crt \
+		-db-sslkey=$(COMPOSE_DIR)/certs/client.key \
+		-db-sslrootcert=$(COMPOSE_DIR)/certs/ca.crt \
+		-log-level=debug

@@ -38,3 +38,14 @@ func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
 
 	return databases, nil
 }
+
+func (s *Store) GetStanza(ctx context.Context) (string, error) {
+	var stanza string
+
+	err := s.pool.QueryRow(ctx, "SELECT value FROM monitoring.cluster_config WHERE key = 'stanza'").Scan(&stanza)
+	if err != nil {
+		return "", err
+	}
+
+	return stanza, nil
+}

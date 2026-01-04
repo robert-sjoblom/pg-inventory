@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/docker/go-connections/nat"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -62,4 +63,20 @@ func StartPostgres(t *testing.T) *TestDbCredentials {
 		host:   host,
 		port:   port,
 	}
+}
+
+func InitializePostgresPool(t *testing.T) (context.Context, *pgxpool.Pool) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	credentials := StartPostgres(t)
+	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
+	if err != nil {
+		t.Fatalf("Database connection failed: %v", err)
+	}
+
+	t.Cleanup(func() { pool.Close() })
+
+	return ctx, pool
 }

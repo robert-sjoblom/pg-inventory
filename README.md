@@ -28,7 +28,60 @@ The collector reaches out to a specific host and collects data from that host. I
 A simple API service, exposes the data collected for any given frontend to use/display as they see fit.
 
 ## Prerequisites
-TODO!
+
+### Target PostgreSQL Server Setup
+
+Before the extractor can connect to a PostgreSQL instance, the following must be configured on the target server:
+
+#### 1. Monitoring Schema and Configuration Table
+
+Create the monitoring schema and cluster configuration table:
+
+```sql
+CREATE SCHEMA IF NOT EXISTS monitoring;
+
+CREATE TABLE IF NOT EXISTS monitoring.cluster_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Required: Set cluster name (used for cluster identification)
+INSERT INTO monitoring.cluster_config (key, value)
+VALUES ('cluster_name', 'your-cluster-name');
+
+-- Required: Set pgBackRest stanza name (if using pgBackRest)
+INSERT INTO monitoring.cluster_config (key, value)
+VALUES ('stanza', 'your-stanza-name');
+```
+
+**Important:** Replace `'your-cluster-name'` and `'your-stanza-name'` with appropriate values for your environment.
+
+#### 2. User Permissions
+
+The PostgreSQL user that the extractor uses must have:
+
+- `SELECT` permission on `monitoring.cluster_config` table
+- Access to system catalog tables (`pg_database`, `pg_class`, etc.)
+- Recommended: Grant `pg_monitor` role for read-only access to statistics views
+
+```sql
+-- Example: Create monitoring user (certificate-based authentication)
+CREATE USER pg_inventory_extractor;
+
+-- Grant necessary permissions
+GRANT USAGE ON SCHEMA monitoring TO pg_inventory_extractor;
+GRANT SELECT ON monitoring.cluster_config TO pg_inventory_extractor;
+GRANT pg_monitor TO pg_inventory_extractor;
+```
+
+**Authentication:** Configure `pg_hba.conf` for certificate-based authentication:
+```
+# Allow certificate authentication for monitoring user
+# TYPE    DATABASE    USER                        ADDRESS        METHOD    OPTIONS
+hostssl   all         pg_inventory_extractor      0.0.0.0/0      cert      clientcert=verify-full
+```
+
+**Note:** The extractor requires read-only access. It does not modify any data in the target PostgreSQL instance.
 
 ## Installation
 TODO!

@@ -1,9 +1,12 @@
+//go:build integration
+
 package store
 
 import (
 	"testing"
 
 	"github.com/robert-sjoblom/pg-inventory/internal/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestListDatabases(t *testing.T) {
@@ -21,16 +24,28 @@ func TestListDatabases(t *testing.T) {
 
 	found := false
 	for _, db := range databases {
-		if db.Name == "testdb" {
+		if db.Name == "postgres" {
 			found = true
 			if db.Oid == 0 {
-				t.Error("testdb database has invalid OID 0")
+				t.Error("postgres database has invalid OID 0")
 			}
 			break
 		}
 	}
 
 	if !found {
-		t.Error("expected to 'testdb' database")
+		t.Error("expected to find 'postgres' database")
 	}
+}
+
+func TestStoreGetStanza(t *testing.T) {
+	ctx, pool := testutil.SetupStore(t, testutil.WithClusterConfig("another-name", "stanza-name"))
+	store := NewStore(pool)
+
+	expected, err := store.GetStanza(ctx)
+	if err != nil {
+		t.Fatalf("GetStanza failed: %v", err)
+	}
+
+	assert.Equal(t, "stanza-name", expected)
 }

@@ -4,6 +4,8 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/docker/go-connections/nat"
@@ -46,10 +48,9 @@ func StartPostgres(t *testing.T, opts ...SetupOption) *TestDbCredentials {
 	db_pass := "postgres"
 
 	container, err := postgres.Run(ctx, "postgres:15-bullseye",
-		postgres.WithDatabase("testdb"),
 		postgres.WithUsername(db_user),
 		postgres.WithPassword(db_pass),
-		postgres.WithInitScripts("testdata/setup/00-monitoring.sql"),
+		postgres.WithInitScripts(initScriptPath("00-monitoring.sql")),
 		postgres.BasicWaitStrategies(),
 	)
 	t.Cleanup(func() {
@@ -88,7 +89,7 @@ func StartPostgres(t *testing.T, opts ...SetupOption) *TestDbCredentials {
 		port:   port,
 	}
 
-	if err := applySetupConfiguration(ctx, t, credentials, cfg); err != nil {
+	if err := applySetupConfiguration(ctx, credentials, cfg); err != nil {
 		t.Fatalf("failed to apply test configuration to database: %v", err)
 	}
 
@@ -111,7 +112,7 @@ func SetupStore(t *testing.T, opts ...SetupOption) (context.Context, *pgxpool.Po
 	return ctx, pool
 }
 
-func applySetupConfiguration(ctx context.Context, t *testing.T, credentials *TestDbCredentials, cfg *setupConfig) error {
+func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials, cfg *setupConfig) error {
 	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
 	if err != nil {
 		return err
@@ -130,4 +131,25 @@ func applySetupConfiguration(ctx context.Context, t *testing.T, credentials *Tes
 	}
 
 	return nil
+}
+
+func initScriptPath(scriptName string) string {
+	wd, _ := os.Getwd()
+	moduleRoot := findModuleRoot(wd)
+	sqlPath := filepath.Join(moduleRoot, "internal", "testutil", "testdata", "setup", scriptName)
+	return sqlPath
+}
+
+func findModuleRoot(dir string) string {
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// we got all the way to filesystem root
+			return ""
+		}
+		dir = parent
+	}
 }

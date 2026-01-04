@@ -9,14 +9,16 @@ import (
 	"testing"
 
 	"github.com/docker/go-connections/nat"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
 type setupConfig struct {
-	clusterName string
-	stanza      string
+	clusterName    string
+	stanza         string
+	extraDatabases []string
 }
 
 type SetupOption func(*setupConfig)
@@ -25,6 +27,12 @@ func WithClusterConfig(clusterName, stanza string) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.clusterName = clusterName
 		cfg.stanza = stanza
+	}
+}
+
+func WithExtraDatabases(names ...string) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.extraDatabases = append(cfg.extraDatabases, names...)
 	}
 }
 
@@ -96,20 +104,17 @@ func StartPostgres(t *testing.T, opts ...SetupOption) *TestDbCredentials {
 	return credentials
 }
 
-func SetupStore(t *testing.T, opts ...SetupOption) (context.Context, *pgxpool.Pool) {
+func ConnectToDatabase(t *testing.T, credentials *TestDbCredentials, dbName string) *pgxpool.Pool {
 	t.Helper()
-
 	ctx := context.Background()
-
-	credentials := StartPostgres(t, opts...)
-	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
+	pool, err := pgxpool.New(ctx, credentials.ConnStr(dbName))
 	if err != nil {
-		t.Fatalf("Database connection failed: %v", err)
+		t.Fatalf("failed to connect: %v", err)
 	}
 
 	t.Cleanup(func() { pool.Close() })
 
-	return ctx, pool
+	return pool
 }
 
 func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials, cfg *setupConfig) error {
@@ -128,6 +133,13 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 	_, err = pool.Exec(ctx, "UPDATE monitoring.cluster_config SET value = $1 WHERE key = 'stanza'", cfg.stanza)
 	if err != nil {
 		return err
+	}
+
+	for _, dbName := range cfg.extraDatabases {
+		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", pgx.Identifier{dbName}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to create database %s: %w", dbName, err)
+		}
 	}
 
 	return nil

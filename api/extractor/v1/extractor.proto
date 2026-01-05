@@ -5,6 +5,7 @@ option go_package = "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1;ext
 service ExtractorService {
     rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse);
     rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
+    rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
 }
 
 message ListDatabasesRequest {}
@@ -22,7 +23,7 @@ message GetServerInfoRequest {}
 message GetServerInfoResponse {
     string cluster_name = 1;
     string pg_version = 2;
-    bool is_in_recoery = 3;
+    bool is_in_recovery = 3;
     bool is_read_only = 4;
     bool ssl_enabled = 5;
     int32 port = 6;

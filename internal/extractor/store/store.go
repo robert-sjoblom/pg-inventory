@@ -66,6 +66,44 @@ func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
 	return databases, nil
 }
 
+const queryServerInfo = `
+SELECT
+    pg_is_in_recovery() AS is_in_recovery,
+    current_setting('transaction_read_only') AS is_read_only,
+    current_setting('ssl') AS ssl,
+    current_setting('port')::int AS port,
+    current_setting('max_connections')::int AS max_connections,
+    current_setting('archive_mode') AS archive_mode,
+    current_setting('wal_level') AS wal_level,
+    current_setting('data_directory') AS data_directory,
+    (SELECT system_identifier FROM pg_control_system()) AS system_identifier,
+    (SELECT timeline_id FROM pg_control_checkpoint()) AS timeline_id,
+    version() AS pg_version;
+`
+
+// Returns the PG server info
+func (s *Store) GetServerInfo(ctx context.Context) (types.ServerInfo, error) {
+	var info types.ServerInfo
+	err := s.pool.QueryRow(ctx, queryServerInfo).Scan(
+		&info.IsInRecovery,
+		&info.IsReadOnly,
+		&info.SslEnabled,
+		&info.Port,
+		&info.MaxConnections,
+		&info.ArchiveMode,
+		&info.WalLevel,
+		&info.DataDirectory,
+		&info.SystemIdentifier,
+		&info.TimelineID,
+		&info.PgVersion,
+	)
+	if err != nil {
+		return info, err
+	}
+
+	return info, nil
+}
+
 var stanzaNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
 func isValidStanzaName(s string) bool {

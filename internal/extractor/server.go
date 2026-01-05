@@ -6,6 +6,7 @@ import (
 
 	extractorv1 "github.com/robert-sjoblom/pg-inventory/gen/extractor/v1"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/store"
+	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -80,4 +81,18 @@ func (s *Server) ListBackups(ctx context.Context, req *extractorv1.ListBackupsRe
 		Stanza:  stanza,
 		Backups: backupInfo,
 	}, nil
+}
+
+func (s *Server) GetServerInfo(ctx context.Context, req *extractorv1.GetServerInfoRequest) (*extractorv1.GetServerInfoResponse, error) {
+	info, err := s.store.GetServerInfo(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get server info: %v", err)
+	}
+
+	resp, err := types.ServerInfoToProto(&info, s.store.ClusterName)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert ServerInfo to RPC: %v", err)
+	}
+
+	return resp, nil
 }

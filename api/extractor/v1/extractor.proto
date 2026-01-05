@@ -11,10 +11,27 @@ message ListDatabasesRequest {}
 message ListDatabasesResponse {
     repeated Database databases = 1;
 }
+
 message ListBackupsRequest {}
 message ListBackupsResponse {
     string stanza = 1;
     repeated BackupInfo backups = 2;
+}
+
+message GetServerInfoRequest {}
+message GetServerInfoResponse {
+    string cluster_name = 1;
+    string pg_version = 2;
+    bool is_in_recoery = 3;
+    bool is_read_only = 4;
+    bool ssl_enabled = 5;
+    int32 port = 6;
+    int32 max_connections = 7;
+    string archive_mode = 8;
+    string data_directory = 9;
+    int64 system_identifier = 10;
+    int32 timeline_id = 11;
+    string wal_level = 12;
 }
 
 message Database {

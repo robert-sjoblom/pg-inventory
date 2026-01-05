@@ -16,7 +16,7 @@ func TestNewStore(t *testing.T) {
 	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "stanza-name"))
 	pool := testutil.ConnectToDatabase(t, creds, "postgres")
 
-	store, err := NewStore(pool)
+	store, err := NewStore(pool, creds.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -29,7 +29,7 @@ func TestNewStoreInvalidStanza(t *testing.T) {
 	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "0000-name"))
 	pool := testutil.ConnectToDatabase(t, creds, "postgres")
 
-	store, err := NewStore(pool)
+	store, err := NewStore(pool, creds.ConnStr)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid stanza name")
 	assert.Nil(t, store, "store should be nil when initialization fails")
@@ -41,7 +41,7 @@ func TestListDatabases(t *testing.T) {
 	creds := testutil.StartPostgres(t, testutil.WithExtraDatabases("testdb", "app-db"))
 	pool := testutil.ConnectToDatabase(t, creds, "postgres")
 
-	store, err := NewStore(pool)
+	store, err := NewStore(pool, creds.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -185,7 +185,7 @@ func TestGetServerInfo(t *testing.T) {
 	creds := testutil.StartPostgres(t)
 	pool := testutil.ConnectToDatabase(t, creds, "postgres")
 
-	store, err := NewStore(pool)
+	store, err := NewStore(pool, creds.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -216,4 +216,67 @@ func TestGetServerInfo(t *testing.T) {
 	}
 
 	assert.Equal(t, expected, actual)
+}
+
+func TestListSchemas(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t, testutil.WithExtraDatabases("testdb", "app-db"), testutil.WithExtraSchemas(testutil.ExtraSchema{
+		Name:     "testdb-schema",
+		Database: "testdb",
+	}, testutil.ExtraSchema{
+		Name:     "app-db-schema",
+		Database: "app-db",
+	}))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListSchemas(ctx)
+	if err != nil {
+		t.Fatalf("GetServerInfo failed: %v", err)
+	}
+
+	expected := []*types.Schema{
+		{
+			Oid:      2200,
+			Name:     "public",
+			Owner:    "pg_database_owner",
+			Database: "postgres",
+		},
+		{
+			Oid:      16384,
+			Name:     "monitoring",
+			Owner:    "postgres",
+			Database: "postgres",
+		},
+		{
+			Oid:      2200,
+			Name:     "public",
+			Owner:    "pg_database_owner",
+			Database: "testdb",
+		},
+		{
+			Oid:      16394,
+			Name:     "testdb-schema",
+			Owner:    "postgres",
+			Database: "testdb",
+		},
+		{
+			Oid:      2200,
+			Name:     "public",
+			Owner:    "pg_database_owner",
+			Database: "app-db",
+		},
+		{
+			Oid:      16395,
+			Name:     "app-db-schema",
+			Owner:    "postgres",
+			Database: "app-db",
+		},
+	}
+
+	assert.ElementsMatch(t, expected, actual)
 }

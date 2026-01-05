@@ -11,7 +11,9 @@ import (
 )
 
 type Store struct {
-	pool        *pgxpool.Pool
+	pool *pgxpool.Pool
+	// Connection string builder function for given dbName
+	connStrFor  func(dbName string) string
 	Stanza      string
 	ClusterName string
 }
@@ -20,7 +22,7 @@ type Store struct {
 // cluster name -- these are static (largely) values that only change occasionally,
 // and so we should probably not taint the RPC routes with small calls to the DB
 // for little gain. Perhaps a micro-optimization.
-func NewStore(p *pgxpool.Pool) (*Store, error) {
+func NewStore(p *pgxpool.Pool, connStrFor func(s string) string) (*Store, error) {
 	ctx := context.Background()
 
 	var stanza, clusterName string
@@ -40,13 +42,14 @@ func NewStore(p *pgxpool.Pool) (*Store, error) {
 
 	return &Store{
 		pool:        p,
+		connStrFor:  connStrFor,
 		ClusterName: clusterName,
 		Stanza:      stanza,
 	}, nil
 }
 
 func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
-	rows, err := s.pool.Query(ctx, "SELECT datname, oid FROM pg_database")
+	rows, err := s.pool.Query(ctx, "SELECT datname, oid FROM pg_database WHERE datallowconn AND NOT datistemplate")
 	if err != nil {
 		return nil, err
 	}
@@ -102,6 +105,65 @@ func (s *Store) GetServerInfo(ctx context.Context) (types.ServerInfo, error) {
 	}
 
 	return info, nil
+}
+
+const queryListSchemas = `
+SELECT
+	n.oid,
+	n.nspname AS name,
+	pg_catalog.pg_get_userbyid(n.nspowner) AS owner
+FROM pg_catalog.pg_namespace n
+WHERE n.nspname NOT LIKE 'pg_%'
+	AND n.nspname != 'information_schema'
+`
+
+// Connects to each database and returns the aggregated schema list
+func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
+	databases, err := s.ListDatabases(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var schemas []*types.Schema
+	for _, db := range databases {
+		dbSchemas, err := s.listSchemasForDatabase(ctx, db.Name)
+		if err != nil {
+			return nil, err
+		}
+		schemas = append(schemas, dbSchemas...)
+	}
+
+	return schemas, nil
+}
+
+func (s *Store) listSchemasForDatabase(ctx context.Context, dbName string) ([]*types.Schema, error) {
+	pool, err := pgxpool.New(ctx, s.connStrFor(dbName))
+	if err != nil {
+		return nil, fmt.Errorf("connect to %q for schemas: %w", dbName, err)
+	}
+	defer pool.Close()
+
+	rows, err := pool.Query(ctx, queryListSchemas)
+	if err != nil {
+		return nil, fmt.Errorf("query schemas in database %q: %w", dbName, err)
+	}
+
+	defer rows.Close()
+
+	var schemas []*types.Schema
+	for rows.Next() {
+		var schema types.Schema
+		err := rows.Scan(&schema.Oid, &schema.Name, &schema.Owner)
+		if err != nil {
+			return nil, fmt.Errorf("query schemas in database %q: %w", dbName, err)
+		}
+		schema.Database = dbName
+		schemas = append(schemas, &schema)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate schemas in database %q: %w", dbName, err)
+	}
+	return schemas, nil
 }
 
 var stanzaNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)

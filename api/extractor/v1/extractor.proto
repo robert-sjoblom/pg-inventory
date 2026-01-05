@@ -6,6 +6,7 @@ service ExtractorService {
     rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse);
     rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
     rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
+    rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse);
 }
 
 message ListDatabasesRequest {}
@@ -34,6 +35,19 @@ message GetServerInfoResponse {
     int32 timeline_id = 11;
     string wal_level = 12;
 }
+
+message ListSchemasRequest {}
+message ListSchemasResponse {
+    repeated Schema schemas = 1;
+}
+
+message Schema {
+    uint32 oid = 1;
+    string name = 2;
+    string owner = 3;
+    string database = 4;
+}
+
 
 message Database {
     string name = 1;

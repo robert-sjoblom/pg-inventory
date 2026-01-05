@@ -179,3 +179,41 @@ func TestIsValidStanzaName(t *testing.T) {
 		})
 	}
 }
+
+func TestGetServerInfo(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	var systemIdentifier int64
+	err = pool.QueryRow(ctx, "SELECT system_identifier FROM pg_control_system()").Scan(&systemIdentifier)
+	if err != nil {
+		t.Fatalf("failed to get system identifier: %v", err)
+	}
+
+	actual, err := store.GetServerInfo(ctx)
+	if err != nil {
+		t.Fatalf("GetServerInfo failed: %v", err)
+	}
+
+	expected := types.ServerInfo{
+		PgVersion:        "PostgreSQL 15.13 (Debian 15.13-1.pgdg110+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit",
+		IsInRecovery:     false,
+		IsReadOnly:       "off",
+		SslEnabled:       "off",
+		Port:             5432,
+		MaxConnections:   100,
+		ArchiveMode:      "off",
+		DataDirectory:    "/var/lib/postgresql/data",
+		SystemIdentifier: systemIdentifier, // This is unknowable until the container spins up and starts PG
+		TimelineID:       1,
+		WalLevel:         "replica",
+	}
+
+	assert.Equal(t, expected, actual)
+}

@@ -49,12 +49,16 @@ func main() {
 
 	// TODO: we need to check if the db is available, as in the original program
 	// we don't want to spam connection attempts if the db is shutdown.
-	if err := pool.Ping(context.Background()); err != nil {
+	if err = pool.Ping(context.Background()); err != nil {
 		logger.Error("failed to connect to database", "err", err)
 		os.Exit(1)
 	}
 
-	st := store.NewStore(pool)
+	st, err := store.NewStore(pool)
+	if err != nil {
+		logger.Error("failed to initialize store", "err", err)
+		os.Exit(1)
+	}
 
 	grpcServer := grpc.NewServer()
 	extractorv1.RegisterExtractorServiceServer(grpcServer, extractor.NewServer(st))

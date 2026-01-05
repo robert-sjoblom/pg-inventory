@@ -12,12 +12,39 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestNewStore(t *testing.T) {
+	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "stanza-name"))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	assert.Equal(t, "another-name", store.ClusterName)
+	assert.Equal(t, "stanza-name", store.Stanza)
+}
+
+func TestNewStoreInvalidStanza(t *testing.T) {
+	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "0000-name"))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid stanza name")
+	assert.Nil(t, store, "store should be nil when initialization fails")
+
+}
+
 func TestListDatabases(t *testing.T) {
 	ctx := context.Background()
 	creds := testutil.StartPostgres(t, testutil.WithExtraDatabases("testdb", "app-db"))
 	pool := testutil.ConnectToDatabase(t, creds, "postgres")
 
-	store := NewStore(pool)
+	store, err := NewStore(pool)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
 
 	databases, err := store.ListDatabases(ctx)
 	if err != nil {
@@ -42,21 +69,6 @@ func TestListDatabases(t *testing.T) {
 	if !found {
 		t.Error("expected to find 'postgres' database")
 	}
-}
-
-func TestStoreGetStanza(t *testing.T) {
-	ctx := context.Background()
-	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "stanza-name"))
-	pool := testutil.ConnectToDatabase(t, creds, "postgres")
-
-	store := NewStore(pool)
-
-	expected, err := store.getStanza(ctx)
-	if err != nil {
-		t.Fatalf("GetStanza failed: %v", err)
-	}
-
-	assert.Equal(t, "stanza-name", expected)
 }
 
 func TestBackupInfoJsonToLocalType(t *testing.T) {
@@ -150,6 +162,11 @@ func TestIsValidStanzaName(t *testing.T) {
 		{
 			name:       "too long stanza name",
 			stanzaName: "abcdefghjkabcdefghjkabcdefghjkabcdefghjkabcdefghjkabcdefghjkabcdefghjk",
+			expected:   false,
+		},
+		{
+			name:       "empty stanza name is an error",
+			stanzaName: "",
 			expected:   false,
 		},
 	}

@@ -3,19 +3,46 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"regexp"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
 )
 
 type Store struct {
-	pool *pgxpool.Pool
+	pool        *pgxpool.Pool
+	Stanza      string
+	ClusterName string
 }
 
-func NewStore(p *pgxpool.Pool) *Store {
-	return &Store{
-		pool: p,
+// NewStore initializes the store. Additionally, it also fetches stanza name and
+// cluster name -- these are static (largely) values that only change occasionally,
+// and so we should probably not taint the RPC routes with small calls to the DB
+// for little gain. Perhaps a micro-optimization.
+func NewStore(p *pgxpool.Pool) (*Store, error) {
+	ctx := context.Background()
+
+	var stanza, clusterName string
+	err := p.QueryRow(ctx, "SELECT value FROM monitoring.cluster_config WHERE key = 'stanza'").Scan(&stanza)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load stanza: %w", err)
 	}
+
+	if !isValidStanzaName(stanza) {
+		return nil, fmt.Errorf("invalid stanza name: %q", stanza)
+	}
+
+	err = p.QueryRow(ctx, "SELECT value FROM monitoring.cluster_config WHERE key = 'cluster_name'").Scan(&clusterName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load cluster_name: %w", err)
+	}
+
+	return &Store{
+		pool:        p,
+		ClusterName: clusterName,
+		Stanza:      stanza,
+	}, nil
 }
 
 func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
@@ -39,13 +66,8 @@ func (s *Store) ListDatabases(ctx context.Context) ([]types.Database, error) {
 	return databases, nil
 }
 
-func (s *Store) getStanza(ctx context.Context) (string, error) {
-	var stanza string
+var stanzaNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
-	err := s.pool.QueryRow(ctx, "SELECT value FROM monitoring.cluster_config WHERE key = 'stanza'").Scan(&stanza)
-	if err != nil {
-		return "", err
-	}
-
-	return stanza, nil
+func isValidStanzaName(s string) bool {
+	return stanzaNamePattern.MatchString(s)
 }

@@ -54,7 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	st, err := store.NewStore(pool)
+	st, err := store.NewStore(pool, config.ConnStrForDb)
 	if err != nil {
 		logger.Error("failed to initialize store", "err", err)
 		os.Exit(1)

@@ -73,6 +73,13 @@ type ServerInfo struct {
 	SystemIdentifier int64  `json:"system_identifier"`
 }
 
+type Schema struct {
+	Database string `json:"database"`
+	Name     string `json:"name"`
+	Owner    string `json:"owner"`
+	Oid      uint32 `json:"oid"`
+}
+
 func ServerInfoToProto(info *ServerInfo, clusterName string) (*extractorv1.GetServerInfoResponse, error) {
 	pgVersion, err := parsePgVersion(info.PgVersion)
 	if err != nil {

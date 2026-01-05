@@ -19,6 +19,12 @@ type setupConfig struct {
 	clusterName    string
 	stanza         string
 	extraDatabases []string
+	extraSchemas   []ExtraSchema
+}
+
+type ExtraSchema struct {
+	Name     string
+	Database string
 }
 
 type SetupOption func(*setupConfig)
@@ -33,6 +39,12 @@ func WithClusterConfig(clusterName, stanza string) SetupOption {
 func WithExtraDatabases(names ...string) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraDatabases = append(cfg.extraDatabases, names...)
+	}
+}
+
+func WithExtraSchemas(schemas ...ExtraSchema) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.extraSchemas = append(cfg.extraSchemas, schemas...)
 	}
 }
 
@@ -140,6 +152,18 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 		if err != nil {
 			return fmt.Errorf("failed to create database %s: %w", dbName, err)
 		}
+	}
+
+	for _, schema := range cfg.extraSchemas {
+		pool, err = pgxpool.New(ctx, credentials.ConnStr(schema.Database))
+		if err != nil {
+			return err
+		}
+		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pgx.Identifier{schema.Name}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to create schema in database %s: %w", schema.Database, err)
+		}
+		pool.Close()
 	}
 
 	return nil

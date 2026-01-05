@@ -96,3 +96,24 @@ func (s *Server) GetServerInfo(ctx context.Context, req *extractorv1.GetServerIn
 
 	return resp, nil
 }
+
+func (s *Server) ListSchemas(ctx context.Context, req *extractorv1.ListSchemasRequest) (*extractorv1.ListSchemasResponse, error) {
+	schemas, err := s.store.ListSchemas(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list schemas: %v", err)
+	}
+
+	resp := make([]*extractorv1.Schema, 0, len(schemas))
+	for _, schema := range schemas {
+		resp = append(resp, &extractorv1.Schema{
+			Oid:      schema.Oid,
+			Name:     schema.Name,
+			Owner:    schema.Owner,
+			Database: schema.Database,
+		})
+	}
+
+	return &extractorv1.ListSchemasResponse{
+		Schemas: resp,
+	}, nil
+}

@@ -13,7 +13,11 @@ import (
 type Store struct {
 	pool *pgxpool.Pool
 	// Connection string builder function for given dbName
-	connStrFor  func(dbName string) string
+	connStrFor func(dbName string) string
+	// Connection semaphores for each database.
+	// MUST be used by any function that connects to a different database than
+	// the default one. These typically end in `ForDatabase`
+	coordinator *ConnectionCoordinator
 	Stanza      string
 	ClusterName string
 }
@@ -43,6 +47,7 @@ func NewStore(p *pgxpool.Pool, connStrFor func(s string) string) (*Store, error)
 	return &Store{
 		pool:        p,
 		connStrFor:  connStrFor,
+		coordinator: NewConnectionCoordinator(),
 		ClusterName: clusterName,
 		Stanza:      stanza,
 	}, nil
@@ -180,6 +185,12 @@ func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
 }
 
 func (s *Store) listSchemasForDatabase(ctx context.Context, dbName string) ([]*types.Schema, error) {
+	err := s.coordinator.Acquire(ctx, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("acquire connection to %q: %w", dbName, err)
+	}
+	defer s.coordinator.Release(dbName)
+
 	pool, err := pgxpool.New(ctx, s.connStrFor(dbName))
 	if err != nil {
 		return nil, fmt.Errorf("connect to %q for schemas: %w", dbName, err)

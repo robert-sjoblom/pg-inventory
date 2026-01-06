@@ -124,16 +124,59 @@ func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
 		return nil, err
 	}
 
-	var schemas []*types.Schema
-	for _, db := range databases {
-		dbSchemas, err := s.listSchemasForDatabase(ctx, db.Name)
-		if err != nil {
-			return nil, err
-		}
-		schemas = append(schemas, dbSchemas...)
+	type result struct {
+		err     error
+		schemas []*types.Schema
 	}
 
-	return schemas, nil
+	resultsCh := make(chan result, len(databases))
+
+	/*
+		Here is probably the first time I actually miss Rust.
+		The following compiles in go:
+
+		for _, db := range databases {
+			go func() {
+				name := db.Name
+			}())
+		}
+
+		However, the goroutine captures the _variable_, not the value. So db
+		will be reassigned before the goroutine reads it (race-ish, I guess).
+		When we pass as a parameter instead (the }(db.Name)) part), we create a
+		copy.
+
+		In Rust you can't even compile it; capturing a &mut in a closure is
+		prevented.
+
+		Nice footgun, go.
+	*/
+	for _, db := range databases {
+		go func(dbName string) {
+			schemas, err := s.listSchemasForDatabase(ctx, dbName)
+			resultsCh <- result{
+				schemas: schemas,
+				err:     err,
+			}
+		}(db.Name)
+	}
+
+	var allSchemas []*types.Schema
+	var errs []error
+	for range databases {
+		res := <-resultsCh
+		if res.err != nil {
+			errs = append(errs, res.err)
+		} else {
+			allSchemas = append(allSchemas, res.schemas...)
+		}
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
+	}
+
+	return allSchemas, nil
 }
 
 func (s *Store) listSchemasForDatabase(ctx context.Context, dbName string) ([]*types.Schema, error) {

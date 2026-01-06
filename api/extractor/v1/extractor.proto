@@ -7,6 +7,7 @@ service ExtractorService {
     rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse);
     rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
     rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse);
+    rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
 }
 
 message ListDatabasesRequest {}
@@ -39,6 +40,25 @@ message GetServerInfoResponse {
 message ListSchemasRequest {}
 message ListSchemasResponse {
     repeated Schema schemas = 1;
+}
+
+message ListExtensionsRequest {}
+message ListExtensionsResponse {
+    repeated InstalledExtension installed = 1;
+    repeated AvailableExtension available = 2;
+}
+
+message InstalledExtension {
+    uint32 oid = 1;
+    string name = 2;
+    string version = 3;
+    string schema = 4;
+    string database = 5;
+}
+
+message AvailableExtension {
+    string name = 1;
+    string default_version = 2;
 }
 
 message Schema {

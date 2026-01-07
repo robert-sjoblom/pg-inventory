@@ -80,6 +80,19 @@ type Schema struct {
 	Oid      uint32 `json:"oid"`
 }
 
+type InstalledExtension struct {
+	Name     string `json:"name"`
+	Version  string `json:"version"`
+	Schema   string `json:"schema"`
+	Database string `json:"database"`
+	Oid      uint32 `json:"oid"`
+}
+
+type AvailableExtension struct {
+	Name           string `json:"name"`
+	DefaultVersion string `json:"default_version"`
+}
+
 func ServerInfoToProto(info *ServerInfo, clusterName string) (*extractorv1.GetServerInfoResponse, error) {
 	pgVersion, err := parsePgVersion(info.PgVersion)
 	if err != nil {

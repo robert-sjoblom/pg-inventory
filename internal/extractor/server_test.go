@@ -79,3 +79,42 @@ func TestListSchemas(t *testing.T) {
 	assert.True(t, foundPublic, "expected to find public schema in postgres database")
 	assert.True(t, foundMonitoring, "expected to find monitoring schema in postgres database")
 }
+
+func TestListExtensions(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	st, err := store.NewStore(pool, creds.ConnStr)
+	require.NoError(t, err)
+
+	server := NewServer(st)
+	conn := testutil.DialBufconn(t, server)
+	client := extractorv1.NewExtractorServiceClient(conn)
+
+	resp, err := client.ListExtensions(ctx, &extractorv1.ListExtensionsRequest{})
+	require.NoError(t, err)
+
+	require.NotEmpty(t, resp.Available, "available extensions should not be empty")
+	require.Greater(t, len(resp.Available), 0, "should have at least one available extension")
+
+	require.Len(t, resp.Installed, 1, "expected exactly 1 installed extensions")
+
+	var foundPlpgsql bool
+	for _, ext := range resp.Installed {
+		assert.NotZero(t, ext.Oid, "extension OID should not be zero")
+		assert.NotEmpty(t, ext.Name, "extension name should not be empty")
+		assert.NotEmpty(t, ext.Version, "extension version should not be empty")
+		assert.NotEmpty(t, ext.Schema, "extension schema should not be empty")
+		assert.Equal(t, "postgres", ext.Database, "all extensions should be in postgres database")
+
+		if ext.Name == "plpgsql" {
+			foundPlpgsql = true
+			assert.Equal(t, uint32(13538), ext.Oid)
+			assert.Equal(t, "1.0", ext.Version)
+			assert.Equal(t, "pg_catalog", ext.Schema)
+		}
+	}
+
+	assert.True(t, foundPlpgsql, "expected to find plpgsql extension")
+}

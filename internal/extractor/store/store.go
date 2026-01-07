@@ -112,16 +112,6 @@ func (s *Store) GetServerInfo(ctx context.Context) (types.ServerInfo, error) {
 	return info, nil
 }
 
-const queryListSchemas = `
-SELECT
-	n.oid,
-	n.nspname AS name,
-	pg_catalog.pg_get_userbyid(n.nspowner) AS owner
-FROM pg_catalog.pg_namespace n
-WHERE n.nspname NOT LIKE 'pg_%'
-	AND n.nspname != 'information_schema'
-`
-
 // Connects to each database and returns the aggregated schema list
 func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
 	databases, err := s.ListDatabases(ctx)
@@ -183,6 +173,138 @@ func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
 
 	return allSchemas, nil
 }
+
+func (s *Store) ListExtensions(ctx context.Context) ([]*types.AvailableExtension, []*types.InstalledExtension, error) {
+	availableExtensions, err := s.listAvailableExtensions(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	databases, err := s.ListDatabases(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	type result struct {
+		err       error
+		installed []*types.InstalledExtension
+	}
+
+	resultsCh := make(chan result, len(databases))
+	for _, db := range databases {
+		go func(dbName string) {
+			installed, err := s.listInstalledExtensionsForDatabase(ctx, dbName)
+			resultsCh <- result{
+				installed: installed,
+				err:       err,
+			}
+		}(db.Name)
+	}
+
+	var installedExtensions []*types.InstalledExtension
+	var errs []error
+	for range databases {
+		res := <-resultsCh
+		if res.err != nil {
+			errs = append(errs, res.err)
+		} else {
+			installedExtensions = append(installedExtensions, res.installed...)
+		}
+	}
+
+	if len(errs) > 0 {
+		return nil, nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
+	}
+
+	return availableExtensions, installedExtensions, nil
+}
+
+const availableExtensions = `
+SELECT
+    name,
+    default_version
+FROM pg_available_extensions
+`
+
+func (s *Store) listAvailableExtensions(ctx context.Context) ([]*types.AvailableExtension, error) {
+	rows, err := s.pool.Query(ctx, availableExtensions)
+	if err != nil {
+		return nil, fmt.Errorf("query available extensions: %w", err)
+	}
+	defer rows.Close()
+
+	var extensions []*types.AvailableExtension
+	for rows.Next() {
+		var ext types.AvailableExtension
+		if err := rows.Scan(&ext.Name, &ext.DefaultVersion); err != nil {
+			return nil, fmt.Errorf("scan available extension: %w", err)
+		}
+		extensions = append(extensions, &ext)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate available extensions: %w", err)
+	}
+
+	return extensions, nil
+}
+
+const queryListInstalledExtensions = `
+SELECT
+    e.oid,
+    e.extname AS name,
+    e.extversion AS version,
+    n.nspname AS schema
+FROM pg_extension e
+JOIN pg_namespace n ON e.extnamespace = n.oid
+ORDER BY e.extname;
+`
+
+func (s *Store) listInstalledExtensionsForDatabase(ctx context.Context, dbName string) ([]*types.InstalledExtension, error) {
+	err := s.coordinator.Acquire(ctx, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("acquire connection to %q: %w", dbName, err)
+	}
+	defer s.coordinator.Release(dbName)
+
+	pool, err := pgxpool.New(ctx, s.connStrFor(dbName))
+	if err != nil {
+		return nil, fmt.Errorf("connect to %q for installed extensions: %w", dbName, err)
+	}
+	defer pool.Close()
+
+	rows, err := pool.Query(ctx, queryListInstalledExtensions)
+	if err != nil {
+		return nil, fmt.Errorf("query installed extensions in database %q: %w", dbName, err)
+	}
+
+	defer rows.Close()
+
+	var extensions []*types.InstalledExtension
+	for rows.Next() {
+		var extension types.InstalledExtension
+		err := rows.Scan(&extension.Oid, &extension.Name, &extension.Version, &extension.Schema)
+		if err != nil {
+			return nil, fmt.Errorf("query installed extensions in database %q: %w", dbName, err)
+		}
+		extension.Database = dbName
+		extensions = append(extensions, &extension)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate installed extensions in database %q: %w", dbName, err)
+	}
+	return extensions, nil
+}
+
+const queryListSchemas = `
+SELECT
+	n.oid,
+	n.nspname AS name,
+	pg_catalog.pg_get_userbyid(n.nspowner) AS owner
+FROM pg_catalog.pg_namespace n
+WHERE n.nspname NOT LIKE 'pg_%'
+	AND n.nspname != 'information_schema'
+`
 
 func (s *Store) listSchemasForDatabase(ctx context.Context, dbName string) ([]*types.Schema, error) {
 	err := s.coordinator.Acquire(ctx, dbName)

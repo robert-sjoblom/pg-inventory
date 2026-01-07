@@ -178,6 +178,19 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 		pool.Close()
 	}
 
+	for _, extension := range cfg.installedExtensions {
+		pool, err = pgxpool.New(ctx, credentials.ConnStr(extension.Database))
+		if err != nil {
+			return err
+		}
+
+		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE EXTENSION %s", pgx.Identifier{extension.Name}.Sanitize()))
+		if err != nil {
+			return err
+		}
+		pool.Close()
+	}
+
 	return nil
 }
 

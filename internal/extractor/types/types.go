@@ -93,6 +93,32 @@ type AvailableExtension struct {
 	DefaultVersion string `json:"default_version"`
 }
 
+func ExtensionsToProto(avail []*AvailableExtension, inst []*InstalledExtension) *extractorv1.ListExtensionsResponse {
+	installed := make([]*extractorv1.InstalledExtension, 0, len(inst))
+	for _, ins := range inst {
+		installed = append(installed, &extractorv1.InstalledExtension{
+			Oid:      ins.Oid,
+			Name:     ins.Name,
+			Version:  ins.Version,
+			Schema:   ins.Schema,
+			Database: ins.Database,
+		})
+	}
+
+	available := make([]*extractorv1.AvailableExtension, 0, len(avail))
+	for _, av := range avail {
+		available = append(available, &extractorv1.AvailableExtension{
+			Name:           av.Name,
+			DefaultVersion: av.DefaultVersion,
+		})
+	}
+
+	return &extractorv1.ListExtensionsResponse{
+		Installed: installed,
+		Available: available,
+	}
+}
+
 func ServerInfoToProto(info *ServerInfo, clusterName string) (*extractorv1.GetServerInfoResponse, error) {
 	pgVersion, err := parsePgVersion(info.PgVersion)
 	if err != nil {

@@ -117,3 +117,12 @@ func (s *Server) ListSchemas(ctx context.Context, req *extractorv1.ListSchemasRe
 		Schemas: resp,
 	}, nil
 }
+
+func (s *Server) ListExtensions(ctx context.Context, req *extractorv1.ListExtensionsRequest) (*extractorv1.ListExtensionsResponse, error) {
+	available, installed, err := s.store.ListExtensions(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list extensions: %v", err)
+	}
+
+	return types.ExtensionsToProto(available, installed), nil
+}

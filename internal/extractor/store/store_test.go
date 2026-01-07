@@ -280,3 +280,59 @@ func TestListSchemas(t *testing.T) {
 
 	assert.ElementsMatch(t, expected, actual)
 }
+
+func TestListExtensions(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t, testutil.WithExtraDatabases("testdb", "app-db"), testutil.WithExtraSchemas(testutil.ExtraSchema{
+		Name:     "testdb-schema",
+		Database: "testdb",
+	}),
+		testutil.WithInstalledExtensions(testutil.InstalledExtension{
+			Name:     "pg_trgm",
+			Database: "testdb",
+		}),
+	)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+
+	available, installed, err := store.ListExtensions(ctx)
+	if err != nil {
+		t.Fatalf("ListExtensions failed: %v", err)
+	}
+
+	expectedInstalled := []*types.InstalledExtension{
+		{
+			Name:     "pg_trgm",
+			Version:  "1.6",
+			Schema:   "public",
+			Database: "testdb",
+			Oid:      16395,
+		},
+		{
+			Name:     "plpgsql",
+			Version:  "1.0",
+			Schema:   "pg_catalog",
+			Database: "testdb",
+			Oid:      13538,
+		},
+		{
+			Name:     "plpgsql",
+			Version:  "1.0",
+			Schema:   "pg_catalog",
+			Database: "app-db",
+			Oid:      13538,
+		},
+		{
+			Name:     "plpgsql",
+			Version:  "1.0",
+			Schema:   "pg_catalog",
+			Database: "postgres",
+			Oid:      13538,
+		},
+	}
+
+	// The actual list is ~47 units long, depending
+	assert.GreaterOrEqual(t, len(available), 0)
+	assert.ElementsMatch(t, expectedInstalled, installed)
+}

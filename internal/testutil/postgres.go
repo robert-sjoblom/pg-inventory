@@ -16,13 +16,19 @@ import (
 )
 
 type setupConfig struct {
-	clusterName    string
-	stanza         string
-	extraDatabases []string
-	extraSchemas   []ExtraSchema
+	clusterName         string
+	stanza              string
+	extraDatabases      []string
+	extraSchemas        []ExtraSchema
+	installedExtensions []InstalledExtension
 }
 
 type ExtraSchema struct {
+	Name     string
+	Database string
+}
+
+type InstalledExtension struct {
 	Name     string
 	Database string
 }
@@ -45,6 +51,12 @@ func WithExtraDatabases(names ...string) SetupOption {
 func WithExtraSchemas(schemas ...ExtraSchema) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraSchemas = append(cfg.extraSchemas, schemas...)
+	}
+}
+
+func WithInstalledExtensions(extensions ...InstalledExtension) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.installedExtensions = append(cfg.installedExtensions, extensions...)
 	}
 }
 

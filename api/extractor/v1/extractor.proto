@@ -8,6 +8,7 @@ service ExtractorService {
     rpc GetServerInfo(GetServerInfoRequest) returns (GetServerInfoResponse);
     rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse);
     rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
+    rpc ListSequences(ListSequencesRequest) returns (ListSequencesResponse);
 }
 
 message ListDatabasesRequest {}
@@ -46,6 +47,20 @@ message ListExtensionsRequest {}
 message ListExtensionsResponse {
     repeated InstalledExtension installed = 1;
     repeated AvailableExtension available = 2;
+}
+
+message ListSequencesRequest {}
+message ListSequencesResponse {
+    repeated Sequence sequences = 1;
+}
+
+message Sequence {
+    uint32 oid = 1;
+    string name = 2;
+    string schema = 3;
+    string owner = 4;
+    string database = 5;
+    string data_type = 6;
 }
 
 message InstalledExtension {

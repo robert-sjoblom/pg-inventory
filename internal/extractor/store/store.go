@@ -119,56 +119,9 @@ func (s *Store) ListSchemas(ctx context.Context) ([]*types.Schema, error) {
 		return nil, err
 	}
 
-	type result struct {
-		err     error
-		schemas []*types.Schema
-	}
-
-	resultsCh := make(chan result, len(databases))
-
-	/*
-		Here is probably the first time I actually miss Rust.
-		The following compiles in go:
-
-		for _, db := range databases {
-			go func() {
-				name := db.Name
-			}())
-		}
-
-		However, the goroutine captures the _variable_, not the value. So db
-		will be reassigned before the goroutine reads it (race-ish, I guess).
-		When we pass as a parameter instead (the }(db.Name)) part), we create a
-		copy.
-
-		In Rust you can't even compile it; capturing a &mut in a closure is
-		prevented.
-
-		Nice footgun, go.
-	*/
-	for _, db := range databases {
-		go func(dbName string) {
-			schemas, err := s.listSchemasForDatabase(ctx, dbName)
-			resultsCh <- result{
-				schemas: schemas,
-				err:     err,
-			}
-		}(db.Name)
-	}
-
-	var allSchemas []*types.Schema
-	var errs []error
-	for range databases {
-		res := <-resultsCh
-		if res.err != nil {
-			errs = append(errs, res.err)
-		} else {
-			allSchemas = append(allSchemas, res.schemas...)
-		}
-	}
-
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
+	allSchemas, err := forEachDatabase(ctx, databases, s.listSchemasForDatabase)
+	if err != nil {
+		return nil, err
 	}
 
 	return allSchemas, nil
@@ -187,35 +140,9 @@ func (s *Store) ListExtensions(ctx context.Context) ([]*types.AvailableExtension
 		return nil, nil, err
 	}
 
-	type result struct {
-		err       error
-		installed []*types.InstalledExtension
-	}
-
-	resultsCh := make(chan result, len(databases))
-	for _, db := range databases {
-		go func(dbName string) {
-			installed, err := s.listInstalledExtensionsForDatabase(ctx, dbName)
-			resultsCh <- result{
-				installed: installed,
-				err:       err,
-			}
-		}(db.Name)
-	}
-
-	var installedExtensions []*types.InstalledExtension
-	var errs []error
-	for range databases {
-		res := <-resultsCh
-		if res.err != nil {
-			errs = append(errs, res.err)
-		} else {
-			installedExtensions = append(installedExtensions, res.installed...)
-		}
-	}
-
-	if len(errs) > 0 {
-		return nil, nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
+	installedExtensions, err := forEachDatabase(ctx, databases, s.listInstalledExtensionsForDatabase)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	return availableExtensions, installedExtensions, nil
@@ -228,39 +155,12 @@ func (s *Store) ListSequences(ctx context.Context) ([]*types.Sequence, error) {
 		return nil, err
 	}
 
-	type result struct {
-		err       error
-		sequences []*types.Sequence
+	seqs, err := forEachDatabase(ctx, databases, s.listSequencesForDatabase)
+	if err != nil {
+		return nil, err
 	}
 
-	resultsCh := make(chan result, len(databases))
-
-	for _, db := range databases {
-		go func(dbName string) {
-			sequences, err := s.listSequencesForDatabase(ctx, dbName)
-			resultsCh <- result{
-				sequences: sequences,
-				err:       err,
-			}
-		}(db.Name)
-	}
-
-	var allSequences []*types.Sequence
-	var errs []error
-	for range databases {
-		res := <-resultsCh
-		if res.err != nil {
-			errs = append(errs, res.err)
-		} else {
-			allSequences = append(allSequences, res.sequences...)
-		}
-	}
-
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
-	}
-
-	return allSequences, nil
+	return seqs, nil
 }
 
 const querySequences = `
@@ -439,4 +339,42 @@ var stanzaNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_-]{0,62}$`)
 
 func isValidStanzaName(s string) bool {
 	return stanzaNamePattern.MatchString(s)
+}
+
+// Fan-out, fan-in for databases. Don't worry about it, just make sure that `fn`
+// honours the coordinator.
+func forEachDatabase[T any](ctx context.Context, databases []types.Database, fn func(context.Context, string) ([]*T, error)) ([]*T, error) {
+	resultsCh := make(chan result[T], len(databases))
+
+	for _, db := range databases {
+		go func(dbName string) {
+			results, err := fn(ctx, dbName)
+			resultsCh <- result[T]{
+				results: results,
+				err:     err,
+			}
+		}(db.Name)
+	}
+
+	var results []*T
+	var errs []error
+	for range databases {
+		res := <-resultsCh
+		if res.err != nil {
+			errs = append(errs, res.err)
+		} else {
+			results = append(results, res.results...)
+		}
+	}
+
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("failed to query %d/%d databases: %v", len(errs), len(databases), errs)
+	}
+
+	return results, nil
+}
+
+type result[T any] struct {
+	err     error
+	results []*T
 }

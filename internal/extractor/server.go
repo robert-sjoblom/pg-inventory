@@ -126,3 +126,26 @@ func (s *Server) ListExtensions(ctx context.Context, req *extractorv1.ListExtens
 
 	return types.ExtensionsToProto(available, installed), nil
 }
+
+func (s *Server) ListSequences(ctx context.Context, req *extractorv1.ListSequencesRequest) (*extractorv1.ListSequencesResponse, error) {
+	seqs, err := s.store.ListSequences(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list sequences: %v", err)
+	}
+
+	resp := make([]*extractorv1.Sequence, 0, len(seqs))
+	for _, seq := range seqs {
+		resp = append(resp, &extractorv1.Sequence{
+			Oid:      seq.Oid,
+			Name:     seq.Name,
+			Schema:   seq.Schema,
+			Owner:    seq.Owner,
+			Database: seq.Database,
+			DataType: seq.DataType,
+		})
+	}
+
+	return &extractorv1.ListSequencesResponse{
+		Sequences: resp,
+	}, nil
+}

@@ -21,6 +21,8 @@ type setupConfig struct {
 	extraDatabases      []string
 	extraSchemas        []ExtraSchema
 	installedExtensions []InstalledExtension
+	extraRoles          []ExtraRole
+	extraTables         []ExtraTable
 }
 
 type ExtraSchema struct {
@@ -31,6 +33,21 @@ type ExtraSchema struct {
 type InstalledExtension struct {
 	Name     string
 	Database string
+}
+
+// ExtraRoles own databases and schemas
+type ExtraRole struct {
+	Database string
+	Schema   string
+	Role     string
+	Password string
+}
+
+type ExtraTable struct {
+	Role     *ExtraRole
+	Schema   string
+	Database string
+	DDL      string
 }
 
 type SetupOption func(*setupConfig)
@@ -57,6 +74,18 @@ func WithExtraSchemas(schemas ...ExtraSchema) SetupOption {
 func WithInstalledExtensions(extensions ...InstalledExtension) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.installedExtensions = append(cfg.installedExtensions, extensions...)
+	}
+}
+
+func WithExtraRoles(roles ...ExtraRole) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.extraRoles = append(cfg.extraRoles, roles...)
+	}
+}
+
+func WithExtraTables(tables ...ExtraTable) SetupOption {
+	return func(cfg *setupConfig) {
+		cfg.extraTables = append(cfg.extraTables, tables...)
 	}
 }
 
@@ -189,6 +218,70 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 			return err
 		}
 		pool.Close()
+	}
+
+	for _, role := range cfg.extraRoles {
+		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE ROLE %s WITH LOGIN PASSWORD $$%s$$",
+			pgx.Identifier{role.Role}.Sanitize(),
+			role.Password))
+		if err != nil {
+			return fmt.Errorf("failed to create role %s: %w", role.Role, err)
+		}
+
+		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s OWNER %s",
+			pgx.Identifier{role.Database}.Sanitize(),
+			pgx.Identifier{role.Role}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to create database %s: %w", role.Database, err)
+		}
+
+		rolePool, err := pgxpool.New(ctx, credentials.ConnStr(role.Database))
+		if err != nil {
+			return err
+		}
+
+		_, err = rolePool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA %s AUTHORIZATION %s",
+			pgx.Identifier{role.Schema}.Sanitize(),
+			pgx.Identifier{role.Role}.Sanitize()))
+		if err != nil {
+			rolePool.Close()
+			return fmt.Errorf("failed to create schema %s in database %s: %w", role.Schema, role.Database, err)
+		}
+		rolePool.Close()
+	}
+
+	for _, table := range cfg.extraTables {
+		var tablePool *pgxpool.Pool
+		var err error
+
+		if table.Role != nil {
+			connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s",
+				table.Role.Role, table.Role.Password,
+				credentials.host, credentials.port.Port(), table.Database)
+			tablePool, err = pgxpool.New(ctx, connStr)
+		} else {
+			return fmt.Errorf("WithExtraTables require a non-nil Role")
+		}
+
+		if err != nil {
+			return err
+		}
+
+		if table.Schema != "" {
+			_, err = tablePool.Exec(ctx, fmt.Sprintf("SET search_path TO %s", pgx.Identifier{table.Schema}.Sanitize()))
+			if err != nil {
+				tablePool.Close()
+				return fmt.Errorf("failed to set search_path to %s: %w", table.Schema, err)
+			}
+		}
+
+		_, err = tablePool.Exec(ctx, table.DDL)
+		if err != nil {
+			tablePool.Close()
+			return fmt.Errorf("failed to execute DDL in database %s: %w", table.Database, err)
+		}
+
+		tablePool.Close()
 	}
 
 	return nil

@@ -113,6 +113,57 @@ type Function struct {
 	Oid               uint32 `json:"oid"`
 }
 
+type TablesInfo struct {
+	Database string
+	Tables   []*Table
+}
+
+type Table struct {
+	Name             string             `json:"name"`
+	Schema           string             `json:"schema"`
+	Owner            string             `json:"owner"`
+	Comment          *string            `json:"comment"`
+	TableColumns     []*TableColumn     `json:"table_columns"`
+	TableIndexes     []*TableIndex      `json:"table_indexes"`
+	TableConstraints []*TableConstraint `json:"table_constraints"`
+	Stats            TableStats         `json:"stats"`
+	Oid              uint32             `json:"oid"`
+}
+
+type TableStats struct {
+	RowEstimate    int64  `json:"row_estimate"`
+	TotalSizeBytes uint64 `json:"total_size_bytes"`
+	HeapSizeBytes  uint64 `json:"heap_size_bytes"`
+	ToastSizeBytes uint64 `json:"toast_size_bytes"`
+}
+
+type TableColumn struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	NotNull bool   `json:"not_null"`
+}
+
+type TableIndex struct {
+	Name        string   `json:"name"`
+	Definition  string   `json:"definition"`
+	Columns     []string `json:"columns"` // Column names in index order
+	SizeBytes   uint64   `json:"size_bytes"`
+	IsUnique    bool     `json:"is_unique"`
+	IsPrimary   bool     `json:"is_primary"`
+	IsExclusion bool     `json:"is_exclusion"`
+	IsPartial   bool     `json:"is_partial"` // Has a "WHERE" clause in definition
+	IsValid     bool     `json:"is_valid"`
+}
+
+type TableConstraint struct {
+	Name           string   `json:"name"`
+	Type           string   `json:"type"` // PK, UNIQ, FK, CHK, EXCL
+	ForeignTable   string   `json:"foreign_table"`
+	Definition     string   `json:"definition"`
+	LocalColumns   []string `json:"local_columns"`
+	ForeignColumns []string `json:"foreign_columns"`
+}
+
 func ExtensionsToProto(avail []*AvailableExtension, inst []*InstalledExtension) *extractorv1.ListExtensionsResponse {
 	installed := make([]*extractorv1.InstalledExtension, 0, len(inst))
 	for _, ins := range inst {

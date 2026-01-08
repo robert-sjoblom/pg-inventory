@@ -163,6 +163,73 @@ func (s *Store) ListSequences(ctx context.Context) ([]*types.Sequence, error) {
 	return seqs, nil
 }
 
+// Returns an aggregated list of sequences from every database.
+func (s *Store) ListFunctions(ctx context.Context) ([]*types.Function, error) {
+	databases, err := s.ListDatabases(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	seqs, err := forEachDatabase(ctx, databases, s.listFunctionsForDatabase)
+	if err != nil {
+		return nil, err
+	}
+
+	return seqs, nil
+}
+
+const queryFunctions = `
+SELECT 
+    p.oid,
+    p.proname AS name,
+    n.nspname AS schema,
+    pg_catalog.pg_get_userbyid(p.proowner) AS owner,
+    l.lanname AS language,
+    pg_catalog.format_type(p.prorettype, NULL) AS return_type,
+    pg_get_function_identity_arguments(p.oid) AS identity_arguments
+FROM pg_catalog.pg_proc p
+JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid
+JOIN pg_catalog.pg_language l ON p.prolang = l.oid
+WHERE n.nspname NOT LIKE 'pg_%'
+    AND n.nspname != 'information_schema'
+`
+
+func (s *Store) listFunctionsForDatabase(ctx context.Context, dbName string) ([]*types.Function, error) {
+	err := s.coordinator.Acquire(ctx, dbName)
+	if err != nil {
+		return nil, fmt.Errorf("acquire connection to %q: %w", dbName, err)
+	}
+	defer s.coordinator.Release(dbName)
+
+	pool, err := pgxpool.New(ctx, s.connStrFor(dbName))
+	if err != nil {
+		return nil, fmt.Errorf("connect to %q for functions: %w", dbName, err)
+	}
+	defer pool.Close()
+
+	rows, err := pool.Query(ctx, queryFunctions)
+	if err != nil {
+		return nil, fmt.Errorf("query functions in database %q: %w", dbName, err)
+	}
+
+	defer rows.Close()
+
+	var functions []*types.Function
+	for rows.Next() {
+		var function types.Function
+		err := rows.Scan(&function.Oid, &function.Name, &function.Schema, &function.Owner, &function.Language, &function.ReturnType, &function.IdentityArguments)
+		if err != nil {
+			return nil, fmt.Errorf("query functions in database %q: %w", dbName, err)
+		}
+		function.Database = dbName
+		functions = append(functions, &function)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate functions in database %q: %w", dbName, err)
+	}
+	return functions, nil
+}
+
 const querySequences = `
 SELECT 
     c.oid,

@@ -93,6 +93,15 @@ type AvailableExtension struct {
 	DefaultVersion string `json:"default_version"`
 }
 
+type Sequence struct {
+	Name     string `json:"name"`
+	Schema   string `json:"schema"`
+	Owner    string `json:"owner"`
+	Database string `json:"database"`
+	DataType string `json:"data_type"`
+	Oid      uint32 `json:"oid"`
+}
+
 func ExtensionsToProto(avail []*AvailableExtension, inst []*InstalledExtension) *extractorv1.ListExtensionsResponse {
 	installed := make([]*extractorv1.InstalledExtension, 0, len(inst))
 	for _, ins := range inst {

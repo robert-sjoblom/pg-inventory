@@ -336,3 +336,34 @@ func TestListExtensions(t *testing.T) {
 	assert.GreaterOrEqual(t, len(available), 0)
 	assert.ElementsMatch(t, expectedInstalled, installed)
 }
+
+func TestListSequences(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+
+	_, err = pool.Exec(ctx, "CREATE SEQUENCE test_seq")
+	if err != nil {
+		t.Fatalf("failed to create sequence: %v", err)
+	}
+
+	actual, err := store.ListSequences(ctx)
+	if err != nil {
+		t.Fatalf("failed to list sequences: %v", err)
+	}
+
+	expected := []*types.Sequence{
+		{
+			Oid:      16392,
+			Name:     "test_seq",
+			Owner:    "postgres",
+			Schema:   "public",
+			Database: "postgres",
+			DataType: "int8",
+		},
+	}
+
+	assert.ElementsMatch(t, actual, expected)
+}

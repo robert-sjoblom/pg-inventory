@@ -118,3 +118,32 @@ func TestListExtensions(t *testing.T) {
 
 	assert.True(t, foundPlpgsql, "expected to find plpgsql extension")
 }
+
+func TestListSequences(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	st, err := store.NewStore(pool, creds.ConnStr)
+	require.NoError(t, err)
+
+	_, err = pool.Exec(ctx, "CREATE SEQUENCE test_seq")
+	require.NoError(t, err)
+
+	server := NewServer(st)
+	conn := testutil.DialBufconn(t, server)
+	client := extractorv1.NewExtractorServiceClient(conn)
+
+	resp, err := client.ListSequences(ctx, &extractorv1.ListSequencesRequest{})
+	require.NoError(t, err)
+
+	require.Len(t, resp.Sequences, 1, "expected exactly 1 sequence")
+
+	seq := resp.Sequences[0]
+	assert.Equal(t, uint32(16392), seq.Oid)
+	assert.Equal(t, "test_seq", seq.Name)
+	assert.Equal(t, "postgres", seq.Owner)
+	assert.Equal(t, "public", seq.Schema)
+	assert.Equal(t, "postgres", seq.Database)
+	assert.Equal(t, "int8", seq.DataType)
+}

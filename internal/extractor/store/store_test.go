@@ -367,3 +367,65 @@ func TestListSequences(t *testing.T) {
 
 	assert.ElementsMatch(t, actual, expected)
 }
+
+func TestListFunctions(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t, testutil.WithExtraDatabases("test-db"))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+
+	function := `
+	CREATE FUNCTION sum(a INT, b INT)
+	RETURNS INT AS $$
+	BEGIN
+	RETURN a + b;
+	END; $$ LANGUAGE plpgsql;`
+
+	function2 := `
+	CREATE FUNCTION sum(a INT)
+	RETURNS INT AS $$
+	BEGIN
+	RETURN a + a;
+	END; $$ LANGUAGE plpgsql;`
+
+	_, err = pool.Exec(ctx, function)
+	if err != nil {
+		t.Fatalf("failed to create function: %v", err)
+	}
+
+	_, err = pool.Exec(ctx, function2)
+	if err != nil {
+		t.Fatalf("failed to create function: %v", err)
+	}
+
+	actual, err := store.ListFunctions(ctx)
+	if err != nil {
+		t.Fatalf("failed to list functions: %v", err)
+	}
+
+	expected := []*types.Function{
+		{
+			Oid:               16393,
+			Name:              "sum",
+			Schema:            "public",
+			Owner:             "postgres",
+			Database:          "postgres",
+			Language:          "plpgsql",
+			ReturnType:        "integer",
+			IdentityArguments: "a integer, b integer",
+		},
+		{
+			Oid:               16394,
+			Name:              "sum",
+			Schema:            "public",
+			Owner:             "postgres",
+			Database:          "postgres",
+			Language:          "plpgsql",
+			ReturnType:        "integer",
+			IdentityArguments: "a integer",
+		},
+	}
+
+	assert.ElementsMatch(t, actual, expected)
+}

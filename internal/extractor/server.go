@@ -149,3 +149,28 @@ func (s *Server) ListSequences(ctx context.Context, req *extractorv1.ListSequenc
 		Sequences: resp,
 	}, nil
 }
+
+func (s *Server) ListFunctions(ctx context.Context, req *extractorv1.ListFunctionsRequest) (*extractorv1.ListFunctionsResponse, error) {
+	functions, err := s.store.ListFunctions(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list functions: %v", err)
+	}
+
+	resp := make([]*extractorv1.Function, 0, len(functions))
+	for _, function := range functions {
+		resp = append(resp, &extractorv1.Function{
+			Oid:               function.Oid,
+			Name:              function.Name,
+			Schema:            function.Schema,
+			Owner:             function.Owner,
+			Database:          function.Database,
+			Language:          function.Language,
+			ReturnType:        function.ReturnType,
+			IdentityArguments: function.IdentityArguments,
+		})
+	}
+
+	return &extractorv1.ListFunctionsResponse{
+		Functions: resp,
+	}, nil
+}

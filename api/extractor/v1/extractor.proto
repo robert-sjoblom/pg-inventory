@@ -9,6 +9,7 @@ service ExtractorService {
     rpc ListSchemas(ListSchemasRequest) returns (ListSchemasResponse);
     rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
     rpc ListSequences(ListSequencesRequest) returns (ListSequencesResponse);
+    rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse);
 }
 
 message ListDatabasesRequest {}
@@ -52,6 +53,22 @@ message ListExtensionsResponse {
 message ListSequencesRequest {}
 message ListSequencesResponse {
     repeated Sequence sequences = 1;
+}
+
+message ListFunctionsRequest {}
+message ListFunctionsResponse {
+    repeated Function functions = 1;
+}
+
+message Function {
+    uint32 oid = 1;
+    string name = 2;
+    string schema = 3;
+    string owner = 4;
+    string database = 5;
+    string language = 6;
+    string return_type = 7;
+    string identity_arguments = 8;
 }
 
 message Sequence {

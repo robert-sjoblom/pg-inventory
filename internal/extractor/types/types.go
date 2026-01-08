@@ -102,6 +102,17 @@ type Sequence struct {
 	Oid      uint32 `json:"oid"`
 }
 
+type Function struct {
+	Name              string `json:"name"`
+	Schema            string `json:"schema"`
+	Owner             string `json:"owner"`
+	Database          string `json:"database"`
+	Language          string `json:"language"`
+	ReturnType        string `json:"return_type"`
+	IdentityArguments string `json:"identity_arguments"`
+	Oid               uint32 `json:"oid"`
+}
+
 func ExtensionsToProto(avail []*AvailableExtension, inst []*InstalledExtension) *extractorv1.ListExtensionsResponse {
 	installed := make([]*extractorv1.InstalledExtension, 0, len(inst))
 	for _, ins := range inst {

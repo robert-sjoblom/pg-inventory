@@ -147,3 +147,41 @@ func TestListSequences(t *testing.T) {
 	assert.Equal(t, "postgres", seq.Database)
 	assert.Equal(t, "int8", seq.DataType)
 }
+
+func TestListFunctions(t *testing.T) {
+	ctx := context.Background()
+	creds := testutil.StartPostgres(t)
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	st, err := store.NewStore(pool, creds.ConnStr)
+	require.NoError(t, err)
+
+	function := `
+	CREATE FUNCTION greet_user(username TEXT)
+	RETURNS TEXT AS $$
+	BEGIN
+		RETURN 'Hello, ' || username || '!';
+	END; $$ LANGUAGE plpgsql;`
+
+	_, err = pool.Exec(ctx, function)
+	require.NoError(t, err)
+
+	server := NewServer(st)
+	conn := testutil.DialBufconn(t, server)
+	client := extractorv1.NewExtractorServiceClient(conn)
+
+	resp, err := client.ListFunctions(ctx, &extractorv1.ListFunctionsRequest{})
+	require.NoError(t, err)
+
+	require.Len(t, resp.Functions, 1, "expected exactly 1 function")
+
+	fn := resp.Functions[0]
+	assert.Equal(t, uint32(16392), fn.Oid)
+	assert.Equal(t, "greet_user", fn.Name)
+	assert.Equal(t, "public", fn.Schema)
+	assert.Equal(t, "postgres", fn.Owner)
+	assert.Equal(t, "postgres", fn.Database)
+	assert.Equal(t, "plpgsql", fn.Language)
+	assert.Equal(t, "text", fn.ReturnType)
+	assert.Equal(t, "username text", fn.IdentityArguments)
+}

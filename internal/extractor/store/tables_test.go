@@ -197,3 +197,76 @@ func TestBasicTable(t *testing.T) {
 	assert.Equal(t, "check", checkConstraint.Type)
 	assert.Contains(t, checkConstraint.Definition, "length")
 }
+
+func TestListTablesNoPrimaryKey(t *testing.T) {
+	const noPkTableDDL = `
+	CREATE TABLE "test-db".no_pk_table (
+		data TEXT,
+		value INTEGER
+	);
+	COMMENT ON TABLE "test-db".no_pk_table IS 'Table without primary key';
+	`
+
+	ctx := context.Background()
+	role := testutil.ExtraRole{
+		Database: "test-db",
+		Schema:   "test-db",
+		Role:     "test-db-owner",
+		Password: "password",
+	}
+	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
+		testutil.ExtraTable{
+			Role:     &role,
+			Schema:   "test-db",
+			Database: "test-db",
+			DDL:      noPkTableDDL,
+		},
+	))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	var testDB *types.TablesInfo
+	for _, db := range actual {
+		if db.Database == "test-db" {
+			testDB = db
+			break
+		}
+	}
+	require.NotNil(t, testDB, "test-db database should be present")
+
+	var noPkTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "no_pk_table" && table.Schema == "test-db" {
+			noPkTable = table
+			break
+		}
+	}
+	require.NotNil(t, noPkTable, "no_pk_table should exist in test-db.test-db")
+
+	for _, idx := range noPkTable.TableIndexes {
+		assert.False(t, idx.IsPrimary, "no_pk_table should not have a primary key index")
+	}
+
+	for _, con := range noPkTable.TableConstraints {
+		assert.NotEqual(t, "primary_key", con.Type, "no_pk_table should not have a primary key constraint")
+	}
+
+	require.Len(t, noPkTable.TableColumns, 2)
+	columnNames := make([]string, len(noPkTable.TableColumns))
+	for i, col := range noPkTable.TableColumns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"data", "value"}, columnNames)
+
+	require.NotNil(t, noPkTable.Comment)
+	assert.Equal(t, "Table without primary key", *noPkTable.Comment)
+}

@@ -70,6 +70,70 @@ const foreignKeyTablesDDL = `
 	);
 `
 
+const allColumnDataTypes = `
+CREATE TABLE "test-db".all_column_types (
+    -- Numeric types
+    col_smallint SMALLINT,
+    col_integer INTEGER,
+    col_bigint BIGINT,
+    col_decimal DECIMAL(10, 2),
+    col_numeric NUMERIC(15, 5),
+    col_real REAL,
+    col_double DOUBLE PRECISION,
+    col_serial SERIAL,
+    col_bigserial BIGSERIAL,
+
+    -- Character types
+    col_char CHAR(10),
+    col_varchar VARCHAR(255),
+    col_text TEXT,
+
+    -- Binary types
+    col_bytea BYTEA,
+
+    -- Date/Time types
+    col_timestamp TIMESTAMP,
+    col_timestamptz TIMESTAMPTZ,
+    col_date DATE,
+    col_time TIME,
+    col_timetz TIMETZ,
+    col_interval INTERVAL,
+
+    -- Boolean
+    col_boolean BOOLEAN,
+
+    -- UUID
+    col_uuid UUID,
+
+    -- Network types
+    col_inet INET,
+    col_cidr CIDR,
+    col_macaddr MACADDR,
+
+    -- JSON types
+    col_json JSON,
+    col_jsonb JSONB,
+
+    -- Array types
+    col_int_array INTEGER[],
+    col_text_array TEXT[],
+    col_jsonb_array JSONB[],
+
+    -- Range types
+    col_int4range INT4RANGE,
+    col_tsrange TSRANGE,
+    col_daterange DATERANGE,
+
+    -- Geometric types
+    col_point POINT,
+    col_box BOX,
+
+    -- Full-text search
+    col_tsvector TSVECTOR,
+    col_tsquery TSQUERY
+);
+`
+
 var sharedCredentials *testutil.TestDbCredentials
 
 func TestMain(m *testing.M) {
@@ -124,6 +188,14 @@ func TestMain(m *testing.M) {
 				Schema:   "test-db",
 				Database: "test-db",
 				DDL:      foreignKeyTablesDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      allColumnDataTypes,
 			},
 		),
 	)
@@ -761,4 +833,128 @@ func TestListTablesForeignKeys(t *testing.T) {
 	}
 	require.NotNil(t, parentPK, "parent_table should have primary key")
 	assert.ElementsMatch(t, []string{"id"}, parentPK.LocalColumns)
+}
+
+func TestListTablesAllColumnTypes(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	var testDB *types.TablesInfo
+	for _, db := range actual {
+		if db.Database == "test-db" {
+			testDB = db
+			break
+		}
+	}
+	require.NotNil(t, testDB, "test-db database should be present")
+
+	var allTypesTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "all_column_types" && table.Schema == "test-db" {
+			allTypesTable = table
+			break
+		}
+	}
+	require.NotNil(t, allTypesTable, "all_column_types should exist in test-db.test-db")
+
+	// Verify we have all expected columns
+	require.Len(t, allTypesTable.TableColumns, 36, "should have 36 columns covering all data types")
+
+	// Build a map of column name -> type for easier assertions
+	columnTypes := make(map[string]string)
+	for _, col := range allTypesTable.TableColumns {
+		columnTypes[col.Name] = col.Type
+	}
+
+	// Numeric types
+	assert.Equal(t, "smallint", columnTypes["col_smallint"])
+	assert.Equal(t, "integer", columnTypes["col_integer"])
+	assert.Equal(t, "bigint", columnTypes["col_bigint"])
+	assert.Equal(t, "numeric(10,2)", columnTypes["col_decimal"])
+	assert.Equal(t, "numeric(15,5)", columnTypes["col_numeric"])
+	assert.Equal(t, "real", columnTypes["col_real"])
+	assert.Equal(t, "double precision", columnTypes["col_double"])
+	assert.Equal(t, "integer", columnTypes["col_serial"])   // SERIAL is stored as integer
+	assert.Equal(t, "bigint", columnTypes["col_bigserial"]) // BIGSERIAL is stored as bigint
+
+	// SERIAL and BIGSERIAL have implicit NOT NULL constraints
+	var serialCol, bigserialCol *types.TableColumn
+	for _, col := range allTypesTable.TableColumns {
+		switch col.Name {
+		case "col_serial":
+			serialCol = col
+		case "col_bigserial":
+			bigserialCol = col
+		}
+	}
+	require.NotNil(t, serialCol)
+	require.NotNil(t, bigserialCol)
+	assert.True(t, serialCol.NotNull, "SERIAL columns have implicit NOT NULL")
+	assert.True(t, bigserialCol.NotNull, "BIGSERIAL columns have implicit NOT NULL")
+
+	// Character types
+	assert.Equal(t, "character(10)", columnTypes["col_char"])
+	assert.Equal(t, "character varying(255)", columnTypes["col_varchar"])
+	assert.Equal(t, "text", columnTypes["col_text"])
+
+	// Binary types
+	assert.Equal(t, "bytea", columnTypes["col_bytea"])
+
+	// Date/Time types
+	assert.Equal(t, "timestamp without time zone", columnTypes["col_timestamp"])
+	assert.Equal(t, "timestamp with time zone", columnTypes["col_timestamptz"])
+	assert.Equal(t, "date", columnTypes["col_date"])
+	assert.Equal(t, "time without time zone", columnTypes["col_time"])
+	assert.Equal(t, "time with time zone", columnTypes["col_timetz"])
+	assert.Equal(t, "interval", columnTypes["col_interval"])
+
+	// Boolean
+	assert.Equal(t, "boolean", columnTypes["col_boolean"])
+
+	// UUID
+	assert.Equal(t, "uuid", columnTypes["col_uuid"])
+
+	// Network types
+	assert.Equal(t, "inet", columnTypes["col_inet"])
+	assert.Equal(t, "cidr", columnTypes["col_cidr"])
+	assert.Equal(t, "macaddr", columnTypes["col_macaddr"])
+
+	// JSON types
+	assert.Equal(t, "json", columnTypes["col_json"])
+	assert.Equal(t, "jsonb", columnTypes["col_jsonb"])
+
+	// Array types
+	assert.Equal(t, "integer[]", columnTypes["col_int_array"])
+	assert.Equal(t, "text[]", columnTypes["col_text_array"])
+	assert.Equal(t, "jsonb[]", columnTypes["col_jsonb_array"])
+
+	// Range types
+	assert.Equal(t, "int4range", columnTypes["col_int4range"])
+	assert.Equal(t, "tsrange", columnTypes["col_tsrange"])
+	assert.Equal(t, "daterange", columnTypes["col_daterange"])
+
+	// Geometric types
+	assert.Equal(t, "point", columnTypes["col_point"])
+	assert.Equal(t, "box", columnTypes["col_box"])
+
+	// Full-text search
+	assert.Equal(t, "tsvector", columnTypes["col_tsvector"])
+	assert.Equal(t, "tsquery", columnTypes["col_tsquery"])
+
+	// Verify all non-SERIAL columns are nullable
+	for _, col := range allTypesTable.TableColumns {
+		if col.Name != "col_serial" && col.Name != "col_bigserial" {
+			assert.False(t, col.NotNull, "column %s should be nullable", col.Name)
+		}
+	}
 }

@@ -145,6 +145,7 @@ type TableColumn struct {
 
 type TableIndex struct {
 	Name        string   `json:"name"`
+	Type        string   `json:"type"` // Access method: btree, hash, gin, gist, brin, etc.
 	Definition  string   `json:"definition"`
 	Columns     []string `json:"columns"` // Column names in index order
 	SizeBytes   uint64   `json:"size_bytes"`

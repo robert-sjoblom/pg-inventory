@@ -10,6 +10,7 @@ service ExtractorService {
     rpc ListExtensions(ListExtensionsRequest) returns (ListExtensionsResponse);
     rpc ListSequences(ListSequencesRequest) returns (ListSequencesResponse);
     rpc ListFunctions(ListFunctionsRequest) returns (ListFunctionsResponse);
+    rpc ListTables(ListTablesRequest) returns (ListTablesResponse);
 }
 
 message ListDatabasesRequest {}
@@ -58,6 +59,62 @@ message ListSequencesResponse {
 message ListFunctionsRequest {}
 message ListFunctionsResponse {
     repeated Function functions = 1;
+}
+
+message ListTablesRequest {}
+message ListTablesResponse {
+    repeated DatabaseTables database_tables = 1;
+}
+
+message DatabaseTables {
+    string database = 1;
+    repeated Table tables = 2;
+}
+
+message Table {
+    uint32 oid = 1;
+    string name = 2;
+    string schema = 3;
+    string owner = 4;
+    optional string comment = 5;  // NULL if no comment
+    TableStats stats = 6;
+    repeated TableColumn columns = 7;
+    repeated TableIndex indexes = 8;
+    repeated TableConstraint constraints = 9;
+}
+
+message TableStats {
+    int64 row_estimate = 1;
+    int64 total_size_bytes = 2;
+    int64 heap_size_bytes = 3;
+    int64 toast_size_bytes = 4;
+}
+
+message TableColumn {
+    string name = 1;
+    string type = 2;
+    bool not_null = 3;
+}
+
+message TableIndex {
+    string name = 1;
+    repeated string columns = 2;
+    bool is_unique = 3;
+    bool is_primary = 4;
+    bool is_exclusion = 5;
+    bool is_partial = 6;
+    bool is_valid = 7;
+    int64 size_bytes = 8;
+    string definition = 9;
+}
+
+message TableConstraint {
+    string name = 1;
+    string type = 2;
+    repeated string local_columns = 3;
+    optional string foreign_table = 4;
+    repeated string foreign_columns = 5;
+    string definition = 6;
 }
 
 message Function {

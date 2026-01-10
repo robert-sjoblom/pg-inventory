@@ -106,6 +106,7 @@ message TableIndex {
     bool is_valid = 7;
     int64 size_bytes = 8;
     string definition = 9;
+    string type = 10;
 }
 
 message TableConstraint {

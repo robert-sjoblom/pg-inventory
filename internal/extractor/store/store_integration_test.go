@@ -154,6 +154,30 @@ CREATE TABLE "test-db".all_column_types (
 );
 `
 
+const indexTypes = `
+CREATE TABLE "test-db".index_types_table (
+    id SERIAL PRIMARY KEY,
+    int_col INTEGER,
+    text_col TEXT,
+    tsvector_col TSVECTOR,
+    point_col POINT,
+    jsonb_col JSONB,
+    array_col INTEGER[],
+    during INT4RANGE,
+    EXCLUDE USING gist (during WITH &&)
+);
+
+CREATE INDEX idx_btree ON "test-db".index_types_table (int_col);
+CREATE INDEX idx_hash ON "test-db".index_types_table USING hash (int_col);
+CREATE INDEX idx_gin_jsonb ON "test-db".index_types_table USING gin (jsonb_col);
+CREATE INDEX idx_gin_array ON "test-db".index_types_table USING gin (array_col);
+CREATE INDEX idx_gin_tsvector ON "test-db".index_types_table USING gin (tsvector_col);
+CREATE INDEX idx_gist_point ON "test-db".index_types_table USING gist (point_col);
+CREATE INDEX idx_spgist_text ON "test-db".index_types_table USING spgist (text_col);
+CREATE INDEX idx_brin ON "test-db".index_types_table USING brin (id);
+CREATE INDEX idx_partial ON "test-db".index_types_table (text_col) WHERE text_col IS NOT NULL;
+`
+
 var sharedCredentials *testutil.TestDbCredentials
 
 func TestMain(m *testing.M) {
@@ -216,6 +240,14 @@ func TestMain(m *testing.M) {
 				Schema:   "test-db",
 				Database: "test-db",
 				DDL:      allColumnDataTypes,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      indexTypes,
 			},
 		),
 	)
@@ -910,4 +942,167 @@ func TestListTablesToastTable(t *testing.T) {
 	assert.Equal(t, toastTable.Stats.TotalSizeBytes, uint64(3170304))
 	assert.Equal(t, toastTable.Stats.HeapSizeBytes, uint64(8192))
 	assert.Equal(t, toastTable.Stats.ToastSizeBytes, uint64(3072000))
+}
+
+func TestListTablesIndexTypes(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	indexTypesTable := findTableInDb(actual, "test-db", "test-db", "index_types_table")
+	require.NotNil(t, indexTypesTable, "index_types_table should exist in test-db.test-db")
+
+	// Should have primary key + 9 explicit indexes
+	require.GreaterOrEqual(t, len(indexTypesTable.TableIndexes), 10, "should have at least 10 indexes")
+
+	indexMap := make(map[string]*types.TableIndex)
+	for _, idx := range indexTypesTable.TableIndexes {
+		indexMap[idx.Name] = idx
+	}
+
+	testCases := []struct {
+		name        string
+		indexType   string
+		columns     []string
+		isPrimary   bool
+		isUnique    bool
+		isPartial   bool
+		shouldExist bool
+	}{
+		{
+			name:        "index_types_table_pkey",
+			indexType:   "btree",
+			columns:     []string{"id"},
+			isPrimary:   true,
+			isUnique:    true,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_btree",
+			indexType:   "btree",
+			columns:     []string{"int_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_hash",
+			indexType:   "hash",
+			columns:     []string{"int_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_gin_jsonb",
+			indexType:   "gin",
+			columns:     []string{"jsonb_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_gin_array",
+			indexType:   "gin",
+			columns:     []string{"array_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_gin_tsvector",
+			indexType:   "gin",
+			columns:     []string{"tsvector_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_gist_point",
+			indexType:   "gist",
+			columns:     []string{"point_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_spgist_text",
+			indexType:   "spgist",
+			columns:     []string{"text_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_brin",
+			indexType:   "brin",
+			columns:     []string{"id"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   false,
+			shouldExist: true,
+		},
+		{
+			name:        "idx_partial",
+			indexType:   "btree",
+			columns:     []string{"text_col"},
+			isPrimary:   false,
+			isUnique:    false,
+			isPartial:   true,
+			shouldExist: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := indexMap[tc.name]
+			if tc.shouldExist {
+				require.NotNil(t, idx, "%s should exist", tc.name)
+				assert.Equal(t, tc.indexType, idx.Type)
+				assert.ElementsMatch(t, tc.columns, idx.Columns)
+				assert.Equal(t, tc.isPrimary, idx.IsPrimary)
+				assert.Equal(t, tc.isUnique, idx.IsUnique)
+				assert.Equal(t, tc.isPartial, idx.IsPartial)
+				assert.True(t, idx.IsValid)
+			} else {
+				assert.Nil(t, idx, "%s should not exist", tc.name)
+			}
+		})
+	}
+
+	// Find and validate exclusion index separately
+	var exclusionIdx *types.TableIndex
+	for _, idx := range indexTypesTable.TableIndexes {
+		if idx.IsExclusion {
+			exclusionIdx = idx
+			break
+		}
+	}
+	require.NotNil(t, exclusionIdx, "exclusion index should exist")
+	assert.Equal(t, "gist", exclusionIdx.Type)
+	assert.ElementsMatch(t, []string{"during"}, exclusionIdx.Columns)
+	assert.False(t, exclusionIdx.IsPrimary)
+	assert.False(t, exclusionIdx.IsUnique)
+	assert.True(t, exclusionIdx.IsExclusion)
+	assert.True(t, exclusionIdx.IsValid)
+	assert.Greater(t, exclusionIdx.SizeBytes, uint64(0), "exclusion index should have non-zero size")
+	assert.Contains(t, exclusionIdx.Definition, "gist", "definition should contain access method")
+	assert.Contains(t, exclusionIdx.Definition, "during", "definition should contain column name")
 }

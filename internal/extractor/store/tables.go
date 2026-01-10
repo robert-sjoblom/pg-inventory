@@ -41,6 +41,7 @@ index_data AS (
         ix.indexrelid AS index_oid,
         jsonb_build_object(
             'name', idx.relname,
+            'type', am.amname,
             'columns', ic.columns,
             'is_unique', ix.indisunique,
             'is_primary', ix.indisprimary,
@@ -55,6 +56,7 @@ index_data AS (
     FROM pg_index ix
     JOIN pg_class idx ON idx.oid = ix.indexrelid AND idx.relkind = 'i'
     JOIN pg_class tbl ON tbl.oid = ix.indrelid
+    JOIN pg_am am ON am.oid = idx.relam
     LEFT JOIN index_column_names ic ON ic.indexrelid = ix.indexrelid
     WHERE
         -- Exclude indexes that are inherited from a parent table (partition indexes)

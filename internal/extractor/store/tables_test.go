@@ -270,3 +270,231 @@ func TestListTablesNoPrimaryKey(t *testing.T) {
 	require.NotNil(t, noPkTable.Comment)
 	assert.Equal(t, "Table without primary key", *noPkTable.Comment)
 }
+
+func TestListTablesCompositePrimaryKey(t *testing.T) {
+	const compositePkTableDDL = `
+	CREATE TABLE "test-db".composite_pk_table (
+		tenant_id UUID NOT NULL,
+		record_id BIGINT NOT NULL,
+		data TEXT,
+		PRIMARY KEY (tenant_id, record_id)
+	);
+	`
+
+	ctx := context.Background()
+	role := testutil.ExtraRole{
+		Database: "test-db",
+		Schema:   "test-db",
+		Role:     "test-db-owner",
+		Password: "password",
+	}
+	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
+		testutil.ExtraTable{
+			Role:     &role,
+			Schema:   "test-db",
+			Database: "test-db",
+			DDL:      compositePkTableDDL,
+		},
+	))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	var testDB *types.TablesInfo
+	for _, db := range actual {
+		if db.Database == "test-db" {
+			testDB = db
+			break
+		}
+	}
+	require.NotNil(t, testDB, "test-db database should be present")
+
+	var compositePkTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "composite_pk_table" && table.Schema == "test-db" {
+			compositePkTable = table
+			break
+		}
+	}
+	require.NotNil(t, compositePkTable, "composite_pk_table should exist in test-db.test-db")
+
+	require.Len(t, compositePkTable.TableColumns, 3)
+	columnNames := make([]string, len(compositePkTable.TableColumns))
+	for i, col := range compositePkTable.TableColumns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"tenant_id", "record_id", "data"}, columnNames)
+
+	var pkIndex *types.TableIndex
+	for _, idx := range compositePkTable.TableIndexes {
+		if idx.IsPrimary {
+			pkIndex = idx
+			break
+		}
+	}
+	require.NotNil(t, pkIndex, "should have primary key index")
+	assert.True(t, pkIndex.IsUnique, "composite PK should be unique")
+	assert.True(t, pkIndex.IsPrimary, "should be marked as primary")
+	assert.True(t, pkIndex.IsValid, "PK index should be valid")
+	assert.ElementsMatch(t, []string{"tenant_id", "record_id"}, pkIndex.Columns, "PK should have both columns in order")
+
+	var pkConstraint *types.TableConstraint
+	for _, con := range compositePkTable.TableConstraints {
+		if con.Type == "primary_key" {
+			pkConstraint = con
+			break
+		}
+	}
+	require.NotNil(t, pkConstraint, "should have primary key constraint")
+	assert.ElementsMatch(t, []string{"tenant_id", "record_id"}, pkConstraint.LocalColumns, "PK constraint should include both columns")
+}
+
+func TestListTablesForeignKeys(t *testing.T) {
+	const foreignKeyTablesDDL = `
+	CREATE TABLE "test-db".parent_table (
+		id BIGSERIAL PRIMARY KEY,
+		name TEXT NOT NULL
+	);
+
+	CREATE TABLE "test-db".child_table (
+		id BIGSERIAL PRIMARY KEY,
+		parent_id BIGINT NOT NULL REFERENCES "test-db".parent_table(id) ON DELETE CASCADE,
+		child_name TEXT NOT NULL,
+		CONSTRAINT fk_parent FOREIGN KEY (parent_id) REFERENCES "test-db".parent_table(id)
+	);
+
+	CREATE TABLE "test-db".composite_pk_table (
+		tenant_id UUID NOT NULL,
+		record_id BIGINT NOT NULL,
+		data TEXT,
+		PRIMARY KEY (tenant_id, record_id)
+	);
+
+	CREATE TABLE "test-db".composite_fk_table (
+		id SERIAL PRIMARY KEY,
+		tenant_id UUID NOT NULL,
+		record_id BIGINT NOT NULL,
+		CONSTRAINT fk_composite FOREIGN KEY (tenant_id, record_id)
+			REFERENCES "test-db".composite_pk_table(tenant_id, record_id)
+	);
+	`
+
+	ctx := context.Background()
+	role := testutil.ExtraRole{
+		Database: "test-db",
+		Schema:   "test-db",
+		Role:     "test-db-owner",
+		Password: "password",
+	}
+	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
+		testutil.ExtraTable{
+			Role:     &role,
+			Schema:   "test-db",
+			Database: "test-db",
+			DDL:      foreignKeyTablesDDL,
+		},
+	))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	var testDB *types.TablesInfo
+	for _, db := range actual {
+		if db.Database == "test-db" {
+			testDB = db
+			break
+		}
+	}
+	require.NotNil(t, testDB, "test-db database should be present")
+
+	var childTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "child_table" && table.Schema == "test-db" {
+			childTable = table
+			break
+		}
+	}
+	require.NotNil(t, childTable, "child_table should exist")
+
+	var fkParent *types.TableConstraint
+	for _, con := range childTable.TableConstraints {
+		if con.Name == "fk_parent" {
+			fkParent = con
+			break
+		}
+	}
+	require.NotNil(t, fkParent, "fk_parent constraint should exist")
+	assert.Equal(t, "foreign_key", fkParent.Type)
+	assert.ElementsMatch(t, []string{"parent_id"}, fkParent.LocalColumns)
+	assert.Contains(t, fkParent.ForeignTable, "parent_table", "should reference parent_table")
+	assert.ElementsMatch(t, []string{"id"}, fkParent.ForeignColumns)
+	assert.NotEmpty(t, fkParent.Definition, "should have constraint definition")
+
+	require.Len(t, childTable.TableColumns, 3)
+	columnNames := make([]string, len(childTable.TableColumns))
+	for i, col := range childTable.TableColumns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "parent_id", "child_name"}, columnNames)
+
+	var compositeFkTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "composite_fk_table" && table.Schema == "test-db" {
+			compositeFkTable = table
+			break
+		}
+	}
+	require.NotNil(t, compositeFkTable, "composite_fk_table should exist")
+
+	var fkComposite *types.TableConstraint
+	for _, con := range compositeFkTable.TableConstraints {
+		if con.Name == "fk_composite" {
+			fkComposite = con
+			break
+		}
+	}
+	require.NotNil(t, fkComposite, "fk_composite constraint should exist")
+	assert.Equal(t, "foreign_key", fkComposite.Type)
+	assert.ElementsMatch(t, []string{"tenant_id", "record_id"}, fkComposite.LocalColumns)
+	assert.Contains(t, fkComposite.ForeignTable, "composite_pk_table", "should reference composite_pk_table")
+	assert.ElementsMatch(t, []string{"tenant_id", "record_id"}, fkComposite.ForeignColumns)
+
+	var parentTable *types.Table
+	for _, table := range testDB.Tables {
+		if table.Name == "parent_table" && table.Schema == "test-db" {
+			parentTable = table
+			break
+		}
+	}
+	require.NotNil(t, parentTable, "parent_table should exist")
+
+	for _, con := range parentTable.TableConstraints {
+		assert.NotEqual(t, "foreign_key", con.Type, "parent_table should not have foreign key constraints")
+	}
+
+	var parentPK *types.TableConstraint
+	for _, con := range parentTable.TableConstraints {
+		if con.Type == "primary_key" {
+			parentPK = con
+			break
+		}
+	}
+	require.NotNil(t, parentPK, "parent_table should have primary key")
+	assert.ElementsMatch(t, []string{"id"}, parentPK.LocalColumns)
+}

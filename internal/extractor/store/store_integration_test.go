@@ -1,3 +1,5 @@
+//go:build integration
+
 package store
 
 import (
@@ -82,7 +84,17 @@ func TestMain(m *testing.M) {
 
 	var err error
 	sharedCredentials, err = testutil.StartSharedPostgres(ctx,
-		testutil.WithExtraRoles(role), testutil.WithExtraTables(
+		testutil.WithClusterConfig("test-cluster", "test-stanza"),
+		testutil.WithExtraDatabases("testdb", "app-db"),
+		testutil.WithExtraRoles(role),
+		testutil.WithExtraSchemas(
+			testutil.ExtraSchema{Name: "testdb-schema", Database: "testdb"},
+			testutil.ExtraSchema{Name: "app-db-schema", Database: "app-db"},
+		),
+		testutil.WithInstalledExtensions(
+			testutil.InstalledExtension{Name: "pg_trgm", Database: "testdb"},
+		),
+		testutil.WithExtraTables(
 			testutil.ExtraTable{
 				Role:     &role,
 				Schema:   "test-db",
@@ -126,6 +138,263 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
+func TestGetServerInfo(t *testing.T) {
+	ctx := context.Background()
+
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	var systemIdentifier int64
+	err = pool.QueryRow(ctx, "SELECT system_identifier FROM pg_control_system()").Scan(&systemIdentifier)
+	if err != nil {
+		t.Fatalf("failed to get system identifier: %v", err)
+	}
+
+	actual, err := store.GetServerInfo(ctx)
+	if err != nil {
+		t.Fatalf("GetServerInfo failed: %v", err)
+	}
+
+	expected := types.ServerInfo{
+		PgVersion:        "PostgreSQL 15.13 (Debian 15.13-1.pgdg110+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit",
+		IsInRecovery:     false,
+		IsReadOnly:       "off",
+		SslEnabled:       "off",
+		Port:             5432,
+		MaxConnections:   100,
+		ArchiveMode:      "off",
+		DataDirectory:    "/var/lib/postgresql/data",
+		SystemIdentifier: systemIdentifier, // This is unknowable until the container spins up and starts PG
+		TimelineID:       1,
+		WalLevel:         "replica",
+	}
+
+	assert.Equal(t, expected, actual)
+}
+
+func TestNewStore(t *testing.T) {
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	assert.Equal(t, "test-cluster", store.ClusterName)
+	assert.Equal(t, "test-stanza", store.Stanza)
+}
+
+func TestNewStoreInvalidStanza(t *testing.T) {
+	creds := testutil.StartPostgres(t, testutil.WithClusterConfig("another-name", "0000-name"))
+	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	store, err := NewStore(pool, creds.ConnStr)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid stanza name")
+	assert.Nil(t, store, "store should be nil when initialization fails")
+
+}
+
+func TestListDatabases(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	databases, err := store.ListDatabases(ctx)
+	if err != nil {
+		t.Fatalf("ListDatabases failed: %v", err)
+	}
+
+	if len(databases) == 0 {
+		t.Fatalf("expected at least one database, got none")
+	}
+
+	found := false
+	for _, db := range databases {
+		if db.Name == "postgres" {
+			found = true
+			if db.Oid == 0 {
+				t.Error("postgres database has invalid OID 0")
+			}
+			break
+		}
+	}
+
+	if !found {
+		t.Error("expected to find 'postgres' database")
+	}
+}
+
+func TestListSchemas(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListSchemas(ctx)
+	if err != nil {
+		t.Fatalf("GetServerInfo failed: %v", err)
+	}
+
+	schemaMap := make(map[string]*types.Schema)
+	for _, schema := range actual {
+		key := schema.Database + "." + schema.Name
+		schemaMap[key] = schema
+	}
+
+	assert.Contains(t, schemaMap, "postgres.public", "postgres.public schema should exist")
+	assert.Contains(t, schemaMap, "postgres.monitoring", "postgres.monitoring schema should exist")
+	assert.Contains(t, schemaMap, "testdb.public", "testdb.public schema should exist")
+	assert.Contains(t, schemaMap, "testdb.testdb-schema", "testdb.testdb-schema should exist")
+	assert.Contains(t, schemaMap, "app-db.public", "app-db.public schema should exist")
+	assert.Contains(t, schemaMap, "app-db.app-db-schema", "app-db.app-db-schema should exist")
+
+	assert.Equal(t, "postgres", schemaMap["postgres.monitoring"].Owner)
+	assert.Equal(t, "pg_database_owner", schemaMap["postgres.public"].Owner)
+}
+
+func TestListExtensions(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+
+	available, installed, err := store.ListExtensions(ctx)
+	if err != nil {
+		t.Fatalf("ListExtensions failed: %v", err)
+	}
+
+	assert.GreaterOrEqual(t, len(available), 40, "should have many available extensions")
+
+	installedMap := make(map[string]*types.InstalledExtension)
+	for _, ext := range installed {
+		key := ext.Database + "." + ext.Name
+		installedMap[key] = ext
+	}
+
+	assert.Contains(t, installedMap, "postgres.plpgsql", "plpgsql should be in postgres")
+	assert.Contains(t, installedMap, "testdb.plpgsql", "plpgsql should be in testdb")
+	assert.Contains(t, installedMap, "app-db.plpgsql", "plpgsql should be in app-db")
+
+	require.Contains(t, installedMap, "testdb.pg_trgm", "pg_trgm should be in testdb")
+	assert.Equal(t, "1.6", installedMap["testdb.pg_trgm"].Version)
+	assert.Equal(t, "public", installedMap["testdb.pg_trgm"].Schema)
+}
+
+func TestListSequences(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+
+	_, err = pool.Exec(ctx, "CREATE SEQUENCE test_seq")
+	if err != nil {
+		t.Fatalf("failed to create sequence: %v", err)
+	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), "DROP SEQUENCE IF EXISTS test_seq")
+	})
+
+	actual, err := store.ListSequences(ctx)
+	if err != nil {
+		t.Fatalf("failed to list sequences: %v", err)
+	}
+
+	var testSeq *types.Sequence
+	for _, seq := range actual {
+		if seq.Name == "test_seq" && seq.Database == "postgres" && seq.Schema == "public" {
+			testSeq = seq
+			break
+		}
+	}
+
+	require.NotNil(t, testSeq, "test_seq should exist")
+	assert.Equal(t, "postgres", testSeq.Owner)
+	assert.Equal(t, "int8", testSeq.DataType)
+}
+
+func TestListFunctions(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+
+	function := `
+	CREATE FUNCTION sum(a INT, b INT)
+	RETURNS INT AS $$
+	BEGIN
+	RETURN a + b;
+	END; $$ LANGUAGE plpgsql;`
+
+	function2 := `
+	CREATE FUNCTION sum(a INT)
+	RETURNS INT AS $$
+	BEGIN
+	RETURN a + a;
+	END; $$ LANGUAGE plpgsql;`
+
+	_, err = pool.Exec(ctx, function)
+	if err != nil {
+		t.Fatalf("failed to create function: %v", err)
+	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT, INT)")
+	})
+
+	_, err = pool.Exec(ctx, function2)
+	if err != nil {
+		t.Fatalf("failed to create function: %v", err)
+	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT)")
+	})
+
+	actual, err := store.ListFunctions(ctx)
+	if err != nil {
+		t.Fatalf("failed to list functions: %v", err)
+	}
+
+	var sumFunctions []*types.Function
+	for _, fn := range actual {
+		if fn.Name == "sum" && fn.Database == "postgres" && fn.Schema == "public" {
+			sumFunctions = append(sumFunctions, fn)
+		}
+	}
+
+	require.Len(t, sumFunctions, 2, "should have exactly 2 sum functions")
+
+	var sum2Args, sum1Arg *types.Function
+	for _, fn := range sumFunctions {
+		switch fn.IdentityArguments {
+		case "a integer, b integer":
+			sum2Args = fn
+		case "a integer":
+			sum1Arg = fn
+		}
+	}
+
+	require.NotNil(t, sum2Args, "sum(a integer, b integer) should exist")
+	assert.Equal(t, "plpgsql", sum2Args.Language)
+	assert.Equal(t, "integer", sum2Args.ReturnType)
+	assert.Equal(t, "postgres", sum2Args.Owner)
+
+	require.NotNil(t, sum1Arg, "sum(a integer) should exist")
+	assert.Equal(t, "plpgsql", sum1Arg.Language)
+	assert.Equal(t, "integer", sum1Arg.ReturnType)
+	assert.Equal(t, "postgres", sum1Arg.Owner)
+}
+
 func TestBasicTable(t *testing.T) {
 	ctx := context.Background()
 	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
@@ -134,6 +403,9 @@ func TestBasicTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
+	t.Cleanup(func() {
+		pool.Exec(context.Background(), "DROP TABLE IF EXISTS foo")
+	})
 
 	store, err := NewStore(pool, sharedCredentials.ConnStr)
 	if err != nil {
@@ -145,13 +417,8 @@ func TestBasicTable(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	assert.Len(t, actual, 2)
-
-	dbNames := make([]string, len(actual))
-	for i, db := range actual {
-		dbNames[i] = db.Database
-	}
-	assert.ElementsMatch(t, []string{"postgres", "test-db"}, dbNames)
+	// Shared container has multiple databases, just verify the ones we need exist
+	assert.GreaterOrEqual(t, len(actual), 2, "should have at least postgres and test-db databases")
 
 	var postgresDB *types.TablesInfo
 	for _, db := range actual {

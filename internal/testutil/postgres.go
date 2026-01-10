@@ -97,11 +97,11 @@ func WithExtraTables(tables ...ExtraTable) SetupOption {
 }
 
 type TestDbCredentials struct {
+	container *postgres.PostgresContainer
 	dbuser    string
 	dbpass    string
 	host      string
 	port      nat.Port
-	container *postgres.PostgresContainer
 }
 
 func (d *TestDbCredentials) Terminate(ctx context.Context) {
@@ -130,12 +130,12 @@ func StartSharedPostgres(ctx context.Context, opts ...SetupOption) (*TestDbCrede
 
 	host, err := container.Host(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pg testcontainer host: %v", err)
+		return nil, fmt.Errorf("failed to get pg testcontainer host: %w", err)
 	}
 
 	port, err := container.MappedPort(ctx, "5432/tcp")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get pg testcontainer port: %v", err)
+		return nil, fmt.Errorf("failed to get pg testcontainer port: %w", err)
 	}
 
 	cfg := &setupConfig{
@@ -156,7 +156,7 @@ func StartSharedPostgres(ctx context.Context, opts ...SetupOption) (*TestDbCrede
 	}
 
 	if err := applySetupConfiguration(ctx, credentials, cfg); err != nil {
-		return nil, fmt.Errorf("failed to apply test configuration to database: %v", err)
+		return nil, fmt.Errorf("failed to apply test configuration to database: %w", err)
 	}
 
 	return credentials, nil
@@ -258,28 +258,30 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 	}
 
 	for _, schema := range cfg.extraSchemas {
-		pool, err = pgxpool.New(ctx, credentials.ConnStr(schema.Database))
-		if err != nil {
-			return err
+		schemaPool, schemaErr := pgxpool.New(ctx, credentials.ConnStr(schema.Database))
+		if schemaErr != nil {
+			return schemaErr
 		}
-		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pgx.Identifier{schema.Name}.Sanitize()))
+		_, err = schemaPool.Exec(ctx, fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", pgx.Identifier{schema.Name}.Sanitize()))
 		if err != nil {
+			schemaPool.Close()
 			return fmt.Errorf("failed to create schema in database %s: %w", schema.Database, err)
 		}
-		pool.Close()
+		schemaPool.Close()
 	}
 
 	for _, extension := range cfg.installedExtensions {
-		pool, err = pgxpool.New(ctx, credentials.ConnStr(extension.Database))
-		if err != nil {
-			return err
+		extPool, extErr := pgxpool.New(ctx, credentials.ConnStr(extension.Database))
+		if extErr != nil {
+			return extErr
 		}
 
-		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE EXTENSION %s", pgx.Identifier{extension.Name}.Sanitize()))
+		_, err = extPool.Exec(ctx, fmt.Sprintf("CREATE EXTENSION %s", pgx.Identifier{extension.Name}.Sanitize()))
 		if err != nil {
+			extPool.Close()
 			return err
 		}
-		pool.Close()
+		extPool.Close()
 	}
 
 	for _, role := range cfg.extraRoles {

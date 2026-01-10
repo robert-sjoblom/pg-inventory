@@ -492,13 +492,7 @@ func TestBasicTable(t *testing.T) {
 	// Shared container has multiple databases, just verify the ones we need exist
 	assert.GreaterOrEqual(t, len(actual), 2, "should have at least postgres and test-db databases")
 
-	var postgresDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "postgres" {
-			postgresDB = db
-			break
-		}
-	}
+	postgresDB := findDb(actual, "postgres")
 	require.NotNil(t, postgresDB, "postgres database should be present")
 
 	tableNames := make([]string, len(postgresDB.Tables))
@@ -507,13 +501,7 @@ func TestBasicTable(t *testing.T) {
 	}
 	assert.Contains(t, tableNames, "public.foo")
 
-	var fooTable *types.Table
-	for _, table := range postgresDB.Tables {
-		if table.Name == "foo" && table.Schema == "public" {
-			fooTable = table
-			break
-		}
-	}
+	fooTable := findTableInDb(actual, "postgres", "public", "foo")
 	require.NotNil(t, fooTable, "foo table should exist in postgres.public")
 	assert.Equal(t, "postgres", fooTable.Owner)
 	assert.Nil(t, fooTable.Comment)
@@ -521,22 +509,10 @@ func TestBasicTable(t *testing.T) {
 	assert.Empty(t, fooTable.TableIndexes, "foo table has no indexes")
 	assert.Empty(t, fooTable.TableConstraints, "foo table has no constraints")
 
-	var testDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "test-db" {
-			testDB = db
-			break
-		}
-	}
+	testDB := findDb(actual, "test-db")
 	require.NotNil(t, testDB, "test-db database should be present")
 
-	var basicTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "basic_table" && table.Schema == "test-db" {
-			basicTable = table
-			break
-		}
-	}
+	basicTable := findTableInDb(actual, "test-db", "test-db", "basic_table")
 	require.NotNil(t, basicTable, "basic_table should exist in test-db.test-db")
 
 	assert.Equal(t, "test-db-owner", basicTable.Owner)
@@ -636,22 +612,7 @@ func TestListTablesNoPrimaryKey(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	var testDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "test-db" {
-			testDB = db
-			break
-		}
-	}
-	require.NotNil(t, testDB, "test-db database should be present")
-
-	var noPkTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "no_pk_table" && table.Schema == "test-db" {
-			noPkTable = table
-			break
-		}
-	}
+	noPkTable := findTableInDb(actual, "test-db", "test-db", "no_pk_table")
 	require.NotNil(t, noPkTable, "no_pk_table should exist in test-db.test-db")
 
 	for _, idx := range noPkTable.TableIndexes {
@@ -687,22 +648,7 @@ func TestListTablesCompositePrimaryKey(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	var testDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "test-db" {
-			testDB = db
-			break
-		}
-	}
-	require.NotNil(t, testDB, "test-db database should be present")
-
-	var compositePkTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "composite_pk_table" && table.Schema == "test-db" {
-			compositePkTable = table
-			break
-		}
-	}
+	compositePkTable := findTableInDb(actual, "test-db", "test-db", "composite_pk_table")
 	require.NotNil(t, compositePkTable, "composite_pk_table should exist in test-db.test-db")
 
 	require.Len(t, compositePkTable.TableColumns, 3)
@@ -750,22 +696,7 @@ func TestListTablesForeignKeys(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	var testDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "test-db" {
-			testDB = db
-			break
-		}
-	}
-	require.NotNil(t, testDB, "test-db database should be present")
-
-	var childTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "child_table" && table.Schema == "test-db" {
-			childTable = table
-			break
-		}
-	}
+	childTable := findTableInDb(actual, "test-db", "test-db", "child_table")
 	require.NotNil(t, childTable, "child_table should exist")
 
 	var fkParent *types.TableConstraint
@@ -789,13 +720,7 @@ func TestListTablesForeignKeys(t *testing.T) {
 	}
 	assert.ElementsMatch(t, []string{"id", "parent_id", "child_name"}, columnNames)
 
-	var compositeFkTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "composite_fk_table" && table.Schema == "test-db" {
-			compositeFkTable = table
-			break
-		}
-	}
+	compositeFkTable := findTableInDb(actual, "test-db", "test-db", "composite_fk_table")
 	require.NotNil(t, compositeFkTable, "composite_fk_table should exist")
 
 	var fkComposite *types.TableConstraint
@@ -811,13 +736,7 @@ func TestListTablesForeignKeys(t *testing.T) {
 	assert.Contains(t, fkComposite.ForeignTable, "composite_pk_table", "should reference composite_pk_table")
 	assert.ElementsMatch(t, []string{"tenant_id", "record_id"}, fkComposite.ForeignColumns)
 
-	var parentTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "parent_table" && table.Schema == "test-db" {
-			parentTable = table
-			break
-		}
-	}
+	parentTable := findTableInDb(actual, "test-db", "test-db", "parent_table")
 	require.NotNil(t, parentTable, "parent_table should exist")
 
 	for _, con := range parentTable.TableConstraints {
@@ -849,34 +768,16 @@ func TestListTablesAllColumnTypes(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	var testDB *types.TablesInfo
-	for _, db := range actual {
-		if db.Database == "test-db" {
-			testDB = db
-			break
-		}
-	}
-	require.NotNil(t, testDB, "test-db database should be present")
-
-	var allTypesTable *types.Table
-	for _, table := range testDB.Tables {
-		if table.Name == "all_column_types" && table.Schema == "test-db" {
-			allTypesTable = table
-			break
-		}
-	}
+	allTypesTable := findTableInDb(actual, "test-db", "test-db", "all_column_types")
 	require.NotNil(t, allTypesTable, "all_column_types should exist in test-db.test-db")
 
-	// Verify we have all expected columns
 	require.Len(t, allTypesTable.TableColumns, 36, "should have 36 columns covering all data types")
 
-	// Build a map of column name -> type for easier assertions
 	columnTypes := make(map[string]string)
 	for _, col := range allTypesTable.TableColumns {
 		columnTypes[col.Name] = col.Type
 	}
 
-	// Numeric types
 	assert.Equal(t, "smallint", columnTypes["col_smallint"])
 	assert.Equal(t, "integer", columnTypes["col_integer"])
 	assert.Equal(t, "bigint", columnTypes["col_bigint"])
@@ -902,52 +803,31 @@ func TestListTablesAllColumnTypes(t *testing.T) {
 	assert.True(t, serialCol.NotNull, "SERIAL columns have implicit NOT NULL")
 	assert.True(t, bigserialCol.NotNull, "BIGSERIAL columns have implicit NOT NULL")
 
-	// Character types
 	assert.Equal(t, "character(10)", columnTypes["col_char"])
 	assert.Equal(t, "character varying(255)", columnTypes["col_varchar"])
 	assert.Equal(t, "text", columnTypes["col_text"])
-
-	// Binary types
 	assert.Equal(t, "bytea", columnTypes["col_bytea"])
-
-	// Date/Time types
 	assert.Equal(t, "timestamp without time zone", columnTypes["col_timestamp"])
 	assert.Equal(t, "timestamp with time zone", columnTypes["col_timestamptz"])
 	assert.Equal(t, "date", columnTypes["col_date"])
 	assert.Equal(t, "time without time zone", columnTypes["col_time"])
 	assert.Equal(t, "time with time zone", columnTypes["col_timetz"])
 	assert.Equal(t, "interval", columnTypes["col_interval"])
-
-	// Boolean
 	assert.Equal(t, "boolean", columnTypes["col_boolean"])
-
-	// UUID
 	assert.Equal(t, "uuid", columnTypes["col_uuid"])
-
-	// Network types
 	assert.Equal(t, "inet", columnTypes["col_inet"])
 	assert.Equal(t, "cidr", columnTypes["col_cidr"])
 	assert.Equal(t, "macaddr", columnTypes["col_macaddr"])
-
-	// JSON types
 	assert.Equal(t, "json", columnTypes["col_json"])
 	assert.Equal(t, "jsonb", columnTypes["col_jsonb"])
-
-	// Array types
 	assert.Equal(t, "integer[]", columnTypes["col_int_array"])
 	assert.Equal(t, "text[]", columnTypes["col_text_array"])
 	assert.Equal(t, "jsonb[]", columnTypes["col_jsonb_array"])
-
-	// Range types
 	assert.Equal(t, "int4range", columnTypes["col_int4range"])
 	assert.Equal(t, "tsrange", columnTypes["col_tsrange"])
 	assert.Equal(t, "daterange", columnTypes["col_daterange"])
-
-	// Geometric types
 	assert.Equal(t, "point", columnTypes["col_point"])
 	assert.Equal(t, "box", columnTypes["col_box"])
-
-	// Full-text search
 	assert.Equal(t, "tsvector", columnTypes["col_tsvector"])
 	assert.Equal(t, "tsquery", columnTypes["col_tsquery"])
 
@@ -957,4 +837,23 @@ func TestListTablesAllColumnTypes(t *testing.T) {
 			assert.False(t, col.NotNull, "column %s should be nullable", col.Name)
 		}
 	}
+}
+
+func findTableInDb(tablesInfo []*types.TablesInfo, dbName, schema, tableName string) *types.Table {
+	db := findDb(tablesInfo, dbName)
+	for _, table := range db.Tables {
+		if table.Name == tableName && table.Schema == schema {
+			return table
+		}
+	}
+	return nil
+}
+
+func findDb(tablesInfo []*types.TablesInfo, dbName string) *types.TablesInfo {
+	for _, db := range tablesInfo {
+		if db.Database == dbName {
+			return db
+		}
+	}
+	return nil
 }

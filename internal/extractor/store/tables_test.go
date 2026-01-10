@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"log"
+	"os"
 	"testing"
 
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
@@ -10,8 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestBasicTable(t *testing.T) {
-	const basicTableDDL = `
+const basicTableDDL = `
 	CREATE TABLE "test-db".basic_table (
     	id SERIAL PRIMARY KEY,
     	name VARCHAR(255) NOT NULL,
@@ -26,31 +27,115 @@ func TestBasicTable(t *testing.T) {
 	CREATE INDEX idx_basic_metadata_gin ON "test-db".basic_table USING gin (metadata);
 	CREATE INDEX idx_basic_name_lower ON "test-db".basic_table (lower(name));
 	CREATE UNIQUE INDEX idx_basic_email_unique ON "test-db".basic_table (email) WHERE email IS NOT NULL;
-	`
+`
 
-	ctx := context.Background()
+const noPkTableDDL = `
+	CREATE TABLE "test-db".no_pk_table (
+		data TEXT,
+		value INTEGER
+	);
+	COMMENT ON TABLE "test-db".no_pk_table IS 'Table without primary key';
+`
+
+const compositePkTableDDL = `
+	CREATE TABLE "test-db".composite_pk_table (
+		tenant_id UUID NOT NULL,
+		record_id BIGINT NOT NULL,
+		data TEXT,
+		PRIMARY KEY (tenant_id, record_id)
+	);
+`
+
+const foreignKeyTablesDDL = `
+	CREATE TABLE "test-db".parent_table (
+		id BIGSERIAL PRIMARY KEY,
+		name TEXT NOT NULL
+	);
+
+	CREATE TABLE "test-db".child_table (
+		id BIGSERIAL PRIMARY KEY,
+		parent_id BIGINT NOT NULL REFERENCES "test-db".parent_table(id) ON DELETE CASCADE,
+		child_name TEXT NOT NULL,
+		CONSTRAINT fk_parent FOREIGN KEY (parent_id) REFERENCES "test-db".parent_table(id)
+	);
+
+	CREATE TABLE "test-db".composite_fk_table (
+		id SERIAL PRIMARY KEY,
+		tenant_id UUID NOT NULL,
+		record_id BIGINT NOT NULL,
+		CONSTRAINT fk_composite FOREIGN KEY (tenant_id, record_id)
+			REFERENCES "test-db".composite_pk_table(tenant_id, record_id)
+	);
+`
+
+var sharedCredentials *testutil.TestDbCredentials
+
+func TestMain(m *testing.M) {
 	role := testutil.ExtraRole{
 		Database: "test-db",
 		Schema:   "test-db",
 		Role:     "test-db-owner",
 		Password: "password",
 	}
-	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
-		testutil.ExtraTable{
-			Role:     &role,
-			Schema:   "test-db",
-			Database: "test-db",
-			DDL:      basicTableDDL,
-		},
-	))
-	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+
+	ctx := context.Background()
+
+	var err error
+	sharedCredentials, err = testutil.StartSharedPostgres(ctx,
+		testutil.WithExtraRoles(role), testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      basicTableDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      noPkTableDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      compositePkTableDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      foreignKeyTablesDDL,
+			},
+		),
+	)
+	if err != nil {
+		log.Fatalf("failed to start shared postgres container: %v", err)
+	}
+
+	defer sharedCredentials.Terminate(ctx)
+
+	code := m.Run()
+
+	os.Exit(code)
+}
+
+func TestBasicTable(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
 
 	_, err := pool.Exec(ctx, "CREATE TABLE foo();")
 	if err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
 
-	store, err := NewStore(pool, creds.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -199,32 +284,10 @@ func TestBasicTable(t *testing.T) {
 }
 
 func TestListTablesNoPrimaryKey(t *testing.T) {
-	const noPkTableDDL = `
-	CREATE TABLE "test-db".no_pk_table (
-		data TEXT,
-		value INTEGER
-	);
-	COMMENT ON TABLE "test-db".no_pk_table IS 'Table without primary key';
-	`
-
 	ctx := context.Background()
-	role := testutil.ExtraRole{
-		Database: "test-db",
-		Schema:   "test-db",
-		Role:     "test-db-owner",
-		Password: "password",
-	}
-	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
-		testutil.ExtraTable{
-			Role:     &role,
-			Schema:   "test-db",
-			Database: "test-db",
-			DDL:      noPkTableDDL,
-		},
-	))
-	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, creds.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -272,33 +335,10 @@ func TestListTablesNoPrimaryKey(t *testing.T) {
 }
 
 func TestListTablesCompositePrimaryKey(t *testing.T) {
-	const compositePkTableDDL = `
-	CREATE TABLE "test-db".composite_pk_table (
-		tenant_id UUID NOT NULL,
-		record_id BIGINT NOT NULL,
-		data TEXT,
-		PRIMARY KEY (tenant_id, record_id)
-	);
-	`
-
 	ctx := context.Background()
-	role := testutil.ExtraRole{
-		Database: "test-db",
-		Schema:   "test-db",
-		Role:     "test-db-owner",
-		Password: "password",
-	}
-	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
-		testutil.ExtraTable{
-			Role:     &role,
-			Schema:   "test-db",
-			Database: "test-db",
-			DDL:      compositePkTableDDL,
-		},
-	))
-	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, creds.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -358,53 +398,10 @@ func TestListTablesCompositePrimaryKey(t *testing.T) {
 }
 
 func TestListTablesForeignKeys(t *testing.T) {
-	const foreignKeyTablesDDL = `
-	CREATE TABLE "test-db".parent_table (
-		id BIGSERIAL PRIMARY KEY,
-		name TEXT NOT NULL
-	);
-
-	CREATE TABLE "test-db".child_table (
-		id BIGSERIAL PRIMARY KEY,
-		parent_id BIGINT NOT NULL REFERENCES "test-db".parent_table(id) ON DELETE CASCADE,
-		child_name TEXT NOT NULL,
-		CONSTRAINT fk_parent FOREIGN KEY (parent_id) REFERENCES "test-db".parent_table(id)
-	);
-
-	CREATE TABLE "test-db".composite_pk_table (
-		tenant_id UUID NOT NULL,
-		record_id BIGINT NOT NULL,
-		data TEXT,
-		PRIMARY KEY (tenant_id, record_id)
-	);
-
-	CREATE TABLE "test-db".composite_fk_table (
-		id SERIAL PRIMARY KEY,
-		tenant_id UUID NOT NULL,
-		record_id BIGINT NOT NULL,
-		CONSTRAINT fk_composite FOREIGN KEY (tenant_id, record_id)
-			REFERENCES "test-db".composite_pk_table(tenant_id, record_id)
-	);
-	`
-
 	ctx := context.Background()
-	role := testutil.ExtraRole{
-		Database: "test-db",
-		Schema:   "test-db",
-		Role:     "test-db-owner",
-		Password: "password",
-	}
-	creds := testutil.StartPostgres(t, testutil.WithExtraRoles(role), testutil.WithExtraTables(
-		testutil.ExtraTable{
-			Role:     &role,
-			Schema:   "test-db",
-			Database: "test-db",
-			DDL:      foreignKeyTablesDDL,
-		},
-	))
-	pool := testutil.ConnectToDatabase(t, creds, "postgres")
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, creds.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}

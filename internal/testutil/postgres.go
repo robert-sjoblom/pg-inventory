@@ -4,6 +4,7 @@ package testutil
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"testing"
@@ -52,6 +53,7 @@ type ExtraTable struct {
 
 type SetupOption func(*setupConfig)
 
+// Sets up cluster configuration (monitoring.* tables)
 func WithClusterConfig(clusterName, stanza string) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.clusterName = clusterName
@@ -59,30 +61,35 @@ func WithClusterConfig(clusterName, stanza string) SetupOption {
 	}
 }
 
+// Sets up additional databases
 func WithExtraDatabases(names ...string) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraDatabases = append(cfg.extraDatabases, names...)
 	}
 }
 
+// Sets up extra schemas in given databases
 func WithExtraSchemas(schemas ...ExtraSchema) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraSchemas = append(cfg.extraSchemas, schemas...)
 	}
 }
 
+// Sets up installed extensions
 func WithInstalledExtensions(extensions ...InstalledExtension) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.installedExtensions = append(cfg.installedExtensions, extensions...)
 	}
 }
 
+// Sets up extra roles
 func WithExtraRoles(roles ...ExtraRole) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraRoles = append(cfg.extraRoles, roles...)
 	}
 }
 
+// Sets up extra tables in specified schema
 func WithExtraTables(tables ...ExtraTable) SetupOption {
 	return func(cfg *setupConfig) {
 		cfg.extraTables = append(cfg.extraTables, tables...)
@@ -90,14 +97,69 @@ func WithExtraTables(tables ...ExtraTable) SetupOption {
 }
 
 type TestDbCredentials struct {
-	dbuser string
-	dbpass string
-	host   string
-	port   nat.Port
+	dbuser    string
+	dbpass    string
+	host      string
+	port      nat.Port
+	container *postgres.PostgresContainer
+}
+
+func (d *TestDbCredentials) Terminate(ctx context.Context) {
+	if err := testcontainers.TerminateContainer(d.container); err != nil {
+		log.Default().Printf("failed to terminate container: %s", err)
+	}
 }
 
 func (d *TestDbCredentials) ConnStr(db string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s", d.dbuser, d.dbpass, d.host, d.port.Port(), db)
+}
+
+func StartSharedPostgres(ctx context.Context, opts ...SetupOption) (*TestDbCredentials, error) {
+	db_user := "postgres"
+	db_pass := "postgres"
+
+	container, err := postgres.Run(ctx, "postgres:15-bullseye",
+		postgres.WithUsername(db_user),
+		postgres.WithPassword(db_pass),
+		postgres.WithInitScripts(initScriptPath("00-monitoring.sql")),
+		postgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	host, err := container.Host(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pg testcontainer host: %v", err)
+	}
+
+	port, err := container.MappedPort(ctx, "5432/tcp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pg testcontainer port: %v", err)
+	}
+
+	cfg := &setupConfig{
+		clusterName: "test-cluster",
+		stanza:      "test-stanza",
+	}
+
+	for _, opt := range opts {
+		opt(cfg)
+	}
+
+	credentials := &TestDbCredentials{
+		dbuser:    db_user,
+		dbpass:    db_pass,
+		host:      host,
+		port:      port,
+		container: container,
+	}
+
+	if err := applySetupConfiguration(ctx, credentials, cfg); err != nil {
+		return nil, fmt.Errorf("failed to apply test configuration to database: %v", err)
+	}
+
+	return credentials, nil
 }
 
 // StartPostgres launches a postgres testcontainer instance

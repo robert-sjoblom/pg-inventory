@@ -149,3 +149,12 @@ const indexTypes = `
 const emptyTable = `
 CREATE TABLE "test-db".empty_table ();
 `
+
+const droppedColumnsTable = `
+CREATE TABLE "test-db".dropped_columns_table (
+    id SERIAL PRIMARY KEY,
+    keep_col TEXT NOT NULL,
+    drop_me_1 INTEGER
+);
+ALTER TABLE "test-db".dropped_columns_table DROP COLUMN drop_me_1;
+`

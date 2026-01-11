@@ -95,6 +95,14 @@ func TestMain(m *testing.M) {
 				DDL:      emptyTable,
 			},
 		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      droppedColumnsTable,
+			},
+		),
 	)
 	if err != nil {
 		log.Fatalf("failed to start shared postgres container: %v", err)
@@ -937,4 +945,38 @@ func TestListTablesEmptyTable(t *testing.T) {
 	assert.Equal(t, emptyTable.Stats.TotalSizeBytes, uint64(0), "empty tables take no space")
 	assert.Equal(t, emptyTable.Stats.HeapSizeBytes, uint64(0), "empty tables have no heap size")
 	assert.Equal(t, uint64(0), emptyTable.Stats.ToastSizeBytes, "empty table should have no toast")
+}
+
+func TestListTablesDroppedColumns(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	droppedColsTable := findTableInDb(actual, "test-db", "test-db", "dropped_columns_table")
+	require.NotNil(t, droppedColsTable, "dropped_columns_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", droppedColsTable.Owner)
+
+	require.Len(t, droppedColsTable.TableColumns, 2, "should have 2 active columns (id, keep_col)")
+
+	columnNames := make([]string, len(droppedColsTable.TableColumns))
+	for i, col := range droppedColsTable.TableColumns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "keep_col"}, columnNames, "should not include dropped columns")
+
+	columnTypes := make(map[string]string)
+	for _, col := range droppedColsTable.TableColumns {
+		columnTypes[col.Name] = col.Type
+	}
+	assert.Equal(t, "integer", columnTypes["id"])
+	assert.Equal(t, "text", columnTypes["keep_col"])
+
+	var keep_col *types.TableColumn
+	for _, col := range droppedColsTable.TableColumns {
+		if col.Name == "keep_col" {
+			keep_col = col
+			break
+		}
+	}
+	require.NotNil(t, keep_col)
+	assert.True(t, keep_col.NotNull, "keep_col should be NOT NULL")
 }

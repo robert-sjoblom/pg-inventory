@@ -8,11 +8,31 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
 	"github.com/robert-sjoblom/pg-inventory/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func findTableInDb(tablesInfo []*types.TablesInfo, dbName, schema, tableName string) *types.Table {
+	db := findDb(tablesInfo, dbName)
+	for _, table := range db.Tables {
+		if table.Name == tableName && table.Schema == schema {
+			return table
+		}
+	}
+	return nil
+}
+
+func findDb(tablesInfo []*types.TablesInfo, dbName string) *types.TablesInfo {
+	for _, db := range tablesInfo {
+		if db.Database == dbName {
+			return db
+		}
+	}
+	return nil
+}
 
 const basicTableDDL = `
 	CREATE TABLE "test-db".basic_table (
@@ -839,21 +859,55 @@ func TestListTablesAllColumnTypes(t *testing.T) {
 	}
 }
 
-func findTableInDb(tablesInfo []*types.TablesInfo, dbName, schema, tableName string) *types.Table {
-	db := findDb(tablesInfo, dbName)
-	for _, table := range db.Tables {
-		if table.Name == tableName && table.Schema == schema {
-			return table
-		}
-	}
-	return nil
-}
+func TestListTablesToastTable(t *testing.T) {
+	const toastTableDDL = `
+	CREATE TABLE public.toast_table (
+		id SERIAL PRIMARY KEY,
+		large_text TEXT,
+		large_jsonb JSONB
+	);
+	ALTER TABLE public.toast_table ALTER COLUMN large_text SET STORAGE EXTERNAL;
+	
+	INSERT INTO public.toast_table (large_text, large_jsonb)
+	SELECT
+		string_agg(md5(random()::text), '') || repeat('x', 10000),
+		jsonb_build_object('data', string_agg(md5(random()::text), ''))
+	FROM generate_series(1, 100) i
+	CROSS JOIN generate_series(1, 300) j
+	GROUP BY i;
+	
+	-- Analyze to update statistics
+	ANALYZE public.toast_table;
+	`
 
-func findDb(tablesInfo []*types.TablesInfo, dbName string) *types.TablesInfo {
-	for _, db := range tablesInfo {
-		if db.Database == dbName {
-			return db
-		}
+	ctx := context.Background()
+	credentials := testutil.StartPostgres(t)
+
+	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
+	if err != nil {
+		t.Fatalf("failed to create connection pool: %v", err)
 	}
-	return nil
+
+	_, err = pool.Exec(ctx, toastTableDDL)
+	if err != nil {
+		t.Fatalf("failed to create toasted table: %v", err)
+	}
+
+	store, err := NewStore(pool, credentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed")
+	}
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	toastTable := findTableInDb(actual, "postgres", "public", "toast_table")
+	require.NotNil(t, toastTable, "toast_table should exist in postgres.public")
+
+	assert.Equal(t, toastTable.Stats.RowEstimate, int64(100))
+	assert.Equal(t, toastTable.Stats.TotalSizeBytes, uint64(3170304))
+	assert.Equal(t, toastTable.Stats.HeapSizeBytes, uint64(8192))
+	assert.Equal(t, toastTable.Stats.ToastSizeBytes, uint64(3072000))
 }

@@ -34,6 +34,31 @@ func findDb(tablesInfo []*types.TablesInfo, dbName string) *types.TablesInfo {
 	return nil
 }
 
+func setupStore(t *testing.T) (context.Context, *Store) {
+	t.Helper()
+	ctx := context.Background()
+	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+
+	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	if err != nil {
+		t.Fatalf("store initialization failed: %v", err)
+	}
+
+	return ctx, store
+}
+
+func setupStoreAndListTables(t *testing.T) (context.Context, *Store, []*types.TablesInfo) {
+	t.Helper()
+	ctx, store := setupStore(t)
+
+	actual, err := store.ListTables(ctx)
+	if err != nil {
+		t.Fatalf("failed to query ListTables: %v", err)
+	}
+
+	return ctx, store, actual
+}
+
 const basicTableDDL = `
 	CREATE TABLE "test-db".basic_table (
     	id SERIAL PRIMARY KEY,
@@ -155,27 +180,31 @@ CREATE TABLE "test-db".all_column_types (
 `
 
 const indexTypes = `
-CREATE TABLE "test-db".index_types_table (
-    id SERIAL PRIMARY KEY,
-    int_col INTEGER,
-    text_col TEXT,
-    tsvector_col TSVECTOR,
-    point_col POINT,
-    jsonb_col JSONB,
-    array_col INTEGER[],
-    during INT4RANGE,
-    EXCLUDE USING gist (during WITH &&)
-);
+ CREATE TABLE "test-db".index_types_table (
+     id SERIAL PRIMARY KEY,
+     int_col INTEGER,
+     text_col TEXT,
+     tsvector_col TSVECTOR,
+     point_col POINT,
+     jsonb_col JSONB,
+     array_col INTEGER[],
+     during INT4RANGE,
+     EXCLUDE USING gist (during WITH &&)
+ );
+ 
+ CREATE INDEX idx_btree ON "test-db".index_types_table (int_col);
+ CREATE INDEX idx_hash ON "test-db".index_types_table USING hash (int_col);
+ CREATE INDEX idx_gin_jsonb ON "test-db".index_types_table USING gin (jsonb_col);
+ CREATE INDEX idx_gin_array ON "test-db".index_types_table USING gin (array_col);
+ CREATE INDEX idx_gin_tsvector ON "test-db".index_types_table USING gin (tsvector_col);
+ CREATE INDEX idx_gist_point ON "test-db".index_types_table USING gist (point_col);
+ CREATE INDEX idx_spgist_text ON "test-db".index_types_table USING spgist (text_col);
+ CREATE INDEX idx_brin ON "test-db".index_types_table USING brin (id);
+ CREATE INDEX idx_partial ON "test-db".index_types_table (text_col) WHERE text_col IS NOT NULL;
+ `
 
-CREATE INDEX idx_btree ON "test-db".index_types_table (int_col);
-CREATE INDEX idx_hash ON "test-db".index_types_table USING hash (int_col);
-CREATE INDEX idx_gin_jsonb ON "test-db".index_types_table USING gin (jsonb_col);
-CREATE INDEX idx_gin_array ON "test-db".index_types_table USING gin (array_col);
-CREATE INDEX idx_gin_tsvector ON "test-db".index_types_table USING gin (tsvector_col);
-CREATE INDEX idx_gist_point ON "test-db".index_types_table USING gist (point_col);
-CREATE INDEX idx_spgist_text ON "test-db".index_types_table USING spgist (text_col);
-CREATE INDEX idx_brin ON "test-db".index_types_table USING brin (id);
-CREATE INDEX idx_partial ON "test-db".index_types_table (text_col) WHERE text_col IS NOT NULL;
+const emptyTable = `
+CREATE TABLE "test-db".empty_table ();
 `
 
 var sharedCredentials *testutil.TestDbCredentials
@@ -248,6 +277,14 @@ func TestMain(m *testing.M) {
 				Schema:   "test-db",
 				Database: "test-db",
 				DDL:      indexTypes,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      emptyTable,
 			},
 		),
 	)
@@ -358,13 +395,7 @@ func TestListDatabases(t *testing.T) {
 }
 
 func TestListSchemas(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
+	ctx, store := setupStore(t)
 
 	actual, err := store.ListSchemas(ctx)
 	if err != nil {
@@ -389,10 +420,7 @@ func TestListSchemas(t *testing.T) {
 }
 
 func TestListExtensions(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	ctx, store := setupStore(t)
 
 	available, installed, err := store.ListExtensions(ctx)
 	if err != nil {
@@ -417,17 +445,14 @@ func TestListExtensions(t *testing.T) {
 }
 
 func TestListSequences(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	ctx, store := setupStore(t)
 
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-
-	_, err = pool.Exec(ctx, "CREATE SEQUENCE test_seq")
+	_, err := store.pool.Exec(ctx, "CREATE SEQUENCE test_seq")
 	if err != nil {
 		t.Fatalf("failed to create sequence: %v", err)
 	}
 	t.Cleanup(func() {
-		pool.Exec(context.Background(), "DROP SEQUENCE IF EXISTS test_seq")
+		store.pool.Exec(context.Background(), "DROP SEQUENCE IF EXISTS test_seq")
 	})
 
 	actual, err := store.ListSequences(ctx)
@@ -449,10 +474,7 @@ func TestListSequences(t *testing.T) {
 }
 
 func TestListFunctions(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	ctx, store := setupStore(t)
 
 	function := `
 	CREATE FUNCTION sum(a INT, b INT)
@@ -468,20 +490,20 @@ func TestListFunctions(t *testing.T) {
 	RETURN a + a;
 	END; $$ LANGUAGE plpgsql;`
 
-	_, err = pool.Exec(ctx, function)
+	_, err := store.pool.Exec(ctx, function)
 	if err != nil {
 		t.Fatalf("failed to create function: %v", err)
 	}
 	t.Cleanup(func() {
-		pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT, INT)")
+		store.pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT, INT)")
 	})
 
-	_, err = pool.Exec(ctx, function2)
+	_, err = store.pool.Exec(ctx, function2)
 	if err != nil {
 		t.Fatalf("failed to create function: %v", err)
 	}
 	t.Cleanup(func() {
-		pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT)")
+		store.pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT)")
 	})
 
 	actual, err := store.ListFunctions(ctx)
@@ -520,21 +542,15 @@ func TestListFunctions(t *testing.T) {
 }
 
 func TestBasicTable(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	ctx, store := setupStore(t)
 
-	_, err := pool.Exec(ctx, "CREATE TABLE foo();")
+	_, err := store.pool.Exec(ctx, "CREATE TABLE foo();")
 	if err != nil {
 		t.Fatalf("failed to create table: %v", err)
 	}
 	t.Cleanup(func() {
-		pool.Exec(context.Background(), "DROP TABLE IF EXISTS foo")
+		store.pool.Exec(context.Background(), "DROP TABLE IF EXISTS foo")
 	})
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
 
 	actual, err := store.ListTables(ctx)
 	if err != nil {
@@ -651,18 +667,7 @@ func TestBasicTable(t *testing.T) {
 }
 
 func TestListTablesNoPrimaryKey(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
-
-	actual, err := store.ListTables(ctx)
-	if err != nil {
-		t.Fatalf("failed to query ListTables: %v", err)
-	}
+	_, _, actual := setupStoreAndListTables(t)
 
 	noPkTable := findTableInDb(actual, "test-db", "test-db", "no_pk_table")
 	require.NotNil(t, noPkTable, "no_pk_table should exist in test-db.test-db")
@@ -687,18 +692,7 @@ func TestListTablesNoPrimaryKey(t *testing.T) {
 }
 
 func TestListTablesCompositePrimaryKey(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
-
-	actual, err := store.ListTables(ctx)
-	if err != nil {
-		t.Fatalf("failed to query ListTables: %v", err)
-	}
+	_, _, actual := setupStoreAndListTables(t)
 
 	compositePkTable := findTableInDb(actual, "test-db", "test-db", "composite_pk_table")
 	require.NotNil(t, compositePkTable, "composite_pk_table should exist in test-db.test-db")
@@ -735,18 +729,7 @@ func TestListTablesCompositePrimaryKey(t *testing.T) {
 }
 
 func TestListTablesForeignKeys(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
-
-	actual, err := store.ListTables(ctx)
-	if err != nil {
-		t.Fatalf("failed to query ListTables: %v", err)
-	}
+	_, _, actual := setupStoreAndListTables(t)
 
 	childTable := findTableInDb(actual, "test-db", "test-db", "child_table")
 	require.NotNil(t, childTable, "child_table should exist")
@@ -807,18 +790,7 @@ func TestListTablesForeignKeys(t *testing.T) {
 }
 
 func TestListTablesAllColumnTypes(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
-
-	actual, err := store.ListTables(ctx)
-	if err != nil {
-		t.Fatalf("failed to query ListTables: %v", err)
-	}
+	_, _, actual := setupStoreAndListTables(t)
 
 	allTypesTable := findTableInDb(actual, "test-db", "test-db", "all_column_types")
 	require.NotNil(t, allTypesTable, "all_column_types should exist in test-db.test-db")
@@ -945,18 +917,7 @@ func TestListTablesToastTable(t *testing.T) {
 }
 
 func TestListTablesIndexTypes(t *testing.T) {
-	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
-
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
-	if err != nil {
-		t.Fatalf("store initialization failed")
-	}
-
-	actual, err := store.ListTables(ctx)
-	if err != nil {
-		t.Fatalf("failed to query ListTables: %v", err)
-	}
+	_, _, actual := setupStoreAndListTables(t)
 
 	indexTypesTable := findTableInDb(actual, "test-db", "test-db", "index_types_table")
 	require.NotNil(t, indexTypesTable, "index_types_table should exist in test-db.test-db")
@@ -1105,4 +1066,23 @@ func TestListTablesIndexTypes(t *testing.T) {
 	assert.Greater(t, exclusionIdx.SizeBytes, uint64(0), "exclusion index should have non-zero size")
 	assert.Contains(t, exclusionIdx.Definition, "gist", "definition should contain access method")
 	assert.Contains(t, exclusionIdx.Definition, "during", "definition should contain column name")
+}
+
+func TestListTablesEmptyTable(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	emptyTable := findTableInDb(actual, "test-db", "test-db", "empty_table")
+	require.NotNil(t, emptyTable, "empty_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", emptyTable.Owner)
+	assert.Nil(t, emptyTable.Comment, "empty_table should have no comment")
+	assert.Empty(t, emptyTable.TableColumns, "empty_table should have no columns")
+	assert.Empty(t, emptyTable.TableIndexes, "empty_table should have no indexes")
+	assert.Empty(t, emptyTable.TableConstraints, "empty_table should have no constraints")
+
+	// Stats should still exist
+	assert.Equal(t, int64(-1), emptyTable.Stats.RowEstimate)
+	assert.Equal(t, emptyTable.Stats.TotalSizeBytes, uint64(0), "empty tables take no space")
+	assert.Equal(t, emptyTable.Stats.HeapSizeBytes, uint64(0), "empty tables have no heap size")
+	assert.Equal(t, uint64(0), emptyTable.Stats.ToastSizeBytes, "empty table should have no toast")
 }

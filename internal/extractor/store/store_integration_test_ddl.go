@@ -209,3 +209,24 @@ CREATE TABLE "test-db".child_two (
     child_two_col TEXT
 ) INHERITS ("test-db".shared_parent);
 `
+
+const partitionedTablesDDL = `
+CREATE TABLE "test-db".partitioned_table (
+    id SERIAL,
+    created_at DATE NOT NULL,
+    data TEXT,
+    PRIMARY KEY (id, created_at)
+) PARTITION BY RANGE (created_at);
+
+CREATE TABLE "test-db".partitioned_table_2024 PARTITION OF "test-db".partitioned_table
+    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+CREATE TABLE "test-db".partitioned_table_2025 PARTITION OF "test-db".partitioned_table
+    FOR VALUES FROM ('2025-01-01') TO ('2026-01-01');
+
+-- Index on partitioned table (propagates to partitions)
+CREATE INDEX idx_partitioned_data ON "test-db".partitioned_table (data);
+
+-- Index on a specific partition
+CREATE INDEX idx_special_data ON "test-db".partitioned_table_2025 (data);
+`

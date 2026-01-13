@@ -48,27 +48,24 @@ index_data AS (
             'is_exclusion', ix.indisexclusion,
             'is_partial', (ix.indpred IS NOT NULL),
             'is_valid', ix.indisvalid,
+            'is_inherited', EXISTS (
+                SELECT 1
+                FROM pg_inherits inh
+                WHERE inh.inhrelid = ix.indexrelid
+            ),
             'size_bytes', pg_relation_size(ix.indexrelid),
             'definition', pg_get_indexdef(ix.indexrelid)
             -- Note: Index scan statistics (idx_scan, idx_tup_read, idx_tup_fetch) are
             -- server-scoped and belong in GetIndexStats RPC, not ListTables.
         ) AS index_json
     FROM pg_index ix
-    JOIN pg_class idx ON idx.oid = ix.indexrelid AND idx.relkind = 'i'
+    JOIN pg_class idx ON idx.oid = ix.indexrelid AND idx.relkind IN ('i', 'I')
     JOIN pg_class tbl ON tbl.oid = ix.indrelid
     JOIN pg_am am ON am.oid = idx.relam
     LEFT JOIN index_column_names ic ON ic.indexrelid = ix.indexrelid
     WHERE
-        -- Exclude indexes that are inherited from a parent table (partition indexes)
-        -- This prevents duplicate indexes when a partitioned table has an index
-        -- that is automatically created on all partitions
-        NOT EXISTS (
-            SELECT 1
-            FROM pg_inherits inh
-            WHERE inh.inhrelid = ix.indrelid
-        )
         -- Only include indexes for tables we care about (user schemas)
-        AND EXISTS (
+        EXISTS (
             SELECT 1
             FROM pg_namespace n
             WHERE n.oid = tbl.relnamespace
@@ -164,7 +161,7 @@ JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN index_agg ia ON ia.table_oid = c.oid
 LEFT JOIN constraint_data cd ON cd.conrelid = c.oid
 LEFT JOIN inheritance_parents ip ON ip.table_oid = c.oid
-WHERE c.relkind = 'r'  -- Only regular tables, not partitioned ('p') or other
+WHERE c.relkind IN ('r', 'p')  -- Regular tables and partitioned tables
 AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 AND n.nspname NOT LIKE 'pg_temp_%'
 AND n.nspname NOT LIKE 'pg_toast_temp_%'

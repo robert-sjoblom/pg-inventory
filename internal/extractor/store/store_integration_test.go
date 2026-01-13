@@ -1087,3 +1087,29 @@ func TestListTablesInheritanceMultipleParents(t *testing.T) {
 	assert.ElementsMatch(t, []string{`"test-db".mixin_a`, `"test-db".mixin_b`}, multiInherit.Inheritance.ParentTables)
 	assert.Nil(t, multiInherit.Inheritance.ChildTables, "multi_inherit should have no children")
 }
+
+func TestListTablesInheritanceMultipleChildren(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	sharedParent := findTableInDb(actual, "test-db", "test-db", "shared_parent")
+	require.NotNil(t, sharedParent, "shared_parent should exist")
+
+	assert.Nil(t, sharedParent.Inheritance.ParentTables, "shared_parent should have no parents")
+	require.NotNil(t, sharedParent.Inheritance.ChildTables, "shared_parent should have children")
+	require.Len(t, sharedParent.Inheritance.ChildTables, 2, "shared_parent should have 2 children")
+	assert.ElementsMatch(t, []string{`"test-db".child_one`, `"test-db".child_two`}, sharedParent.Inheritance.ChildTables)
+
+	childOne := findTableInDb(actual, "test-db", "test-db", "child_one")
+	require.NotNil(t, childOne, "child_one should exist")
+
+	require.NotNil(t, childOne.Inheritance.ParentTables, "child_one should have parents")
+	assert.ElementsMatch(t, []string{`"test-db".shared_parent`}, childOne.Inheritance.ParentTables)
+	assert.Nil(t, childOne.Inheritance.ChildTables, "child_one should have no children")
+
+	childTwo := findTableInDb(actual, "test-db", "test-db", "child_two")
+	require.NotNil(t, childTwo, "child_two should exist")
+
+	require.NotNil(t, childTwo.Inheritance.ParentTables, "child_two should have parents")
+	assert.ElementsMatch(t, []string{`"test-db".shared_parent`}, childTwo.Inheritance.ParentTables)
+	assert.Nil(t, childTwo.Inheritance.ChildTables, "child_two should have no children")
+}

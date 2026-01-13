@@ -195,4 +195,17 @@ CREATE TABLE "test-db".mixin_b (
 CREATE TABLE "test-db".multi_inherit (
     own_col JSONB
 ) INHERITS ("test-db".mixin_a, "test-db".mixin_b);
+
+-- Parent with multiple children
+CREATE TABLE "test-db".shared_parent (
+    shared_col UUID
+);
+
+CREATE TABLE "test-db".child_one (
+    child_one_col INTEGER
+) INHERITS ("test-db".shared_parent);
+
+CREATE TABLE "test-db".child_two (
+    child_two_col TEXT
+) INHERITS ("test-db".shared_parent);
 `

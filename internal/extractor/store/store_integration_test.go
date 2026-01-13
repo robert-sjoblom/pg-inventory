@@ -1035,3 +1035,29 @@ func TestListTablesInheritanceSimple(t *testing.T) {
 	assert.ElementsMatch(t, []string{`"test-db".base_table`}, derivedTable.Inheritance.ParentTables)
 	assert.Nil(t, derivedTable.Inheritance.ChildTables, "derived_table should have no children")
 }
+
+func TestListTablesInheritanceMultiLevel(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	grandparentTable := findTableInDb(actual, "test-db", "test-db", "grandparent_table")
+	require.NotNil(t, grandparentTable, "grandparent_table should exist")
+
+	assert.Nil(t, grandparentTable.Inheritance.ParentTables, "grandparent should have no parents")
+	require.NotNil(t, grandparentTable.Inheritance.ChildTables, "grandparent should have children")
+	assert.ElementsMatch(t, []string{`"test-db".parent_inherits_gp`}, grandparentTable.Inheritance.ChildTables)
+
+	parentInheritsGp := findTableInDb(actual, "test-db", "test-db", "parent_inherits_gp")
+	require.NotNil(t, parentInheritsGp, "parent_inherits_gp should exist")
+
+	require.NotNil(t, parentInheritsGp.Inheritance.ParentTables, "parent should have parents")
+	assert.ElementsMatch(t, []string{`"test-db".grandparent_table`}, parentInheritsGp.Inheritance.ParentTables)
+	require.NotNil(t, parentInheritsGp.Inheritance.ChildTables, "parent should have children")
+	assert.ElementsMatch(t, []string{`"test-db".child_inherits_parent`}, parentInheritsGp.Inheritance.ChildTables)
+
+	childInheritsParent := findTableInDb(actual, "test-db", "test-db", "child_inherits_parent")
+	require.NotNil(t, childInheritsParent, "child_inherits_parent should exist")
+
+	require.NotNil(t, childInheritsParent.Inheritance.ParentTables, "child should have parents")
+	assert.ElementsMatch(t, []string{`"test-db".parent_inherits_gp`}, childInheritsParent.Inheritance.ParentTables)
+	assert.Nil(t, childInheritsParent.Inheritance.ChildTables, "child should have no children")
+}

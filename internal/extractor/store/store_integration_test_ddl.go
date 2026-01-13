@@ -169,4 +169,17 @@ CREATE TABLE "test-db".base_table (
 CREATE TABLE "test-db".derived_table (
     derived_col INTEGER
 ) INHERITS ("test-db".base_table);
+
+-- Multi-level inheritance: grandparent -> parent -> child
+CREATE TABLE "test-db".grandparent_table (
+    gp_col TEXT
+);
+
+CREATE TABLE "test-db".parent_inherits_gp (
+    parent_col INTEGER
+) INHERITS ("test-db".grandparent_table);
+
+CREATE TABLE "test-db".child_inherits_parent (
+    child_col BOOLEAN
+) INHERITS ("test-db".parent_inherits_gp);
 `

@@ -158,3 +158,54 @@ CREATE TABLE "test-db".dropped_columns_table (
 );
 ALTER TABLE "test-db".dropped_columns_table DROP COLUMN drop_me_1;
 `
+
+const inheritanceTables = `
+-- Simple inheritance: single parent
+CREATE TABLE "test-db".base_table (
+    id SERIAL PRIMARY KEY,
+    base_col TEXT
+);
+
+CREATE TABLE "test-db".derived_table (
+    derived_col INTEGER
+) INHERITS ("test-db".base_table);
+
+-- Multi-level inheritance: grandparent -> parent -> child
+CREATE TABLE "test-db".grandparent_table (
+    gp_col TEXT
+);
+
+CREATE TABLE "test-db".parent_inherits_gp (
+    parent_col INTEGER
+) INHERITS ("test-db".grandparent_table);
+
+CREATE TABLE "test-db".child_inherits_parent (
+    child_col BOOLEAN
+) INHERITS ("test-db".parent_inherits_gp);
+
+-- Multiple inheritance: inherits from two parents
+CREATE TABLE "test-db".mixin_a (
+    mixin_a_col VARCHAR(50)
+);
+
+CREATE TABLE "test-db".mixin_b (
+    mixin_b_col TIMESTAMPTZ
+);
+
+CREATE TABLE "test-db".multi_inherit (
+    own_col JSONB
+) INHERITS ("test-db".mixin_a, "test-db".mixin_b);
+
+-- Parent with multiple children
+CREATE TABLE "test-db".shared_parent (
+    shared_col UUID
+);
+
+CREATE TABLE "test-db".child_one (
+    child_one_col INTEGER
+) INHERITS ("test-db".shared_parent);
+
+CREATE TABLE "test-db".child_two (
+    child_two_col TEXT
+) INHERITS ("test-db".shared_parent);
+`

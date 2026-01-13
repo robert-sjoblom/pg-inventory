@@ -114,6 +114,19 @@ constraint_data AS (
     FROM pg_constraint con
     WHERE con.contype IN ('p', 'u', 'f', 'c', 'x')
     GROUP BY con.conrelid
+),
+inheritance_parents AS (
+    SELECT
+        inhrelid AS table_oid,
+        jsonb_agg(
+            jsonb_build_object(
+                'oid', inhparent::bigint,
+                'name', inhparent::regclass::text
+            )
+            ORDER BY inhseqno
+        ) AS parent_tables
+    FROM pg_inherits
+    GROUP BY inhrelid
 )
 SELECT
     c.oid,
@@ -142,11 +155,15 @@ SELECT
         AND NOT att.attisdropped
     ) AS columns,
     ia.indexes AS indexes,
-    cd.constraints AS constraints
+    cd.constraints AS constraints,
+    jsonb_build_object(
+        'parent_tables', ip.parent_tables
+    ) AS inheritance
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN index_agg ia ON ia.table_oid = c.oid
 LEFT JOIN constraint_data cd ON cd.conrelid = c.oid
+LEFT JOIN inheritance_parents ip ON ip.table_oid = c.oid
 WHERE c.relkind = 'r'  -- Only regular tables, not partitioned ('p') or other
 AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 AND n.nspname NOT LIKE 'pg_temp_%'
@@ -181,6 +198,7 @@ func (s *Store) listTablesForDatabase(ctx context.Context, dbName string) ([]*ty
 		var columnsJSON []byte
 		var indexesJSON []byte
 		var constraintsJSON []byte
+		var inheritanceJSON []byte
 
 		err := rows.Scan(
 			&table.Oid,
@@ -192,6 +210,7 @@ func (s *Store) listTablesForDatabase(ctx context.Context, dbName string) ([]*ty
 			&columnsJSON,
 			&indexesJSON,
 			&constraintsJSON,
+			&inheritanceJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan table row in database %q: %w", dbName, err)
@@ -221,6 +240,11 @@ func (s *Store) listTablesForDatabase(ctx context.Context, dbName string) ([]*ty
 			if err := json.Unmarshal(constraintsJSON, &table.TableConstraints); err != nil {
 				return nil, fmt.Errorf("unmarshal constraints for table %s: %w", table.Name, err)
 			}
+		}
+
+		// Unmarshal inheritance (always present)
+		if err := json.Unmarshal(inheritanceJSON, &table.Inheritance); err != nil {
+			return nil, fmt.Errorf("unmarshal inheritance for table %s: %w", table.Name, err)
 		}
 
 		tables = append(tables, &table)

@@ -103,6 +103,14 @@ func TestMain(m *testing.M) {
 				DDL:      droppedColumnsTable,
 			},
 		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      inheritanceTables,
+			},
+		),
 	)
 	if err != nil {
 		log.Fatalf("failed to start shared postgres container: %v", err)
@@ -979,4 +987,130 @@ func TestListTablesDroppedColumns(t *testing.T) {
 	}
 	require.NotNil(t, keep_col)
 	assert.True(t, keep_col.NotNull, "keep_col should be NOT NULL")
+}
+
+func TestListTablesInheritanceSimple(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	baseTable := findTableInDb(actual, "test-db", "test-db", "base_table")
+	require.NotNil(t, baseTable, "base_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", baseTable.Owner)
+	require.Len(t, baseTable.TableColumns, 2, "base_table should have 2 columns")
+
+	baseColumnNames := make([]string, len(baseTable.TableColumns))
+	for i, col := range baseTable.TableColumns {
+		baseColumnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "base_col"}, baseColumnNames)
+	assert.Nil(t, baseTable.Inheritance.ParentTables, "base_table should have no parents")
+
+	derivedTable := findTableInDb(actual, "test-db", "test-db", "derived_table")
+	require.NotNil(t, derivedTable, "derived_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", derivedTable.Owner)
+	require.Len(t, derivedTable.TableColumns, 3, "derived_table should have 3 columns (inherited + own)")
+
+	derivedColumnNames := make([]string, len(derivedTable.TableColumns))
+	for i, col := range derivedTable.TableColumns {
+		derivedColumnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "base_col", "derived_col"}, derivedColumnNames, "derived table should have both inherited and own columns")
+
+	columnTypes := make(map[string]string)
+	for _, col := range derivedTable.TableColumns {
+		columnTypes[col.Name] = col.Type
+	}
+	assert.Equal(t, "integer", columnTypes["id"])
+	assert.Equal(t, "text", columnTypes["base_col"])
+	assert.Equal(t, "integer", columnTypes["derived_col"])
+
+	require.NotNil(t, derivedTable.Inheritance.ParentTables, "derived_table should have parents")
+	require.Len(t, derivedTable.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".base_table`, derivedTable.Inheritance.ParentTables[0].Name)
+	assert.Equal(t, baseTable.Oid, derivedTable.Inheritance.ParentTables[0].Oid, "parent OID should match base_table OID")
+}
+
+func TestListTablesInheritanceMultiLevel(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	grandparentTable := findTableInDb(actual, "test-db", "test-db", "grandparent_table")
+	require.NotNil(t, grandparentTable, "grandparent_table should exist")
+	assert.Nil(t, grandparentTable.Inheritance.ParentTables, "grandparent should have no parents")
+
+	parentInheritsGp := findTableInDb(actual, "test-db", "test-db", "parent_inherits_gp")
+	require.NotNil(t, parentInheritsGp, "parent_inherits_gp should exist")
+
+	require.NotNil(t, parentInheritsGp.Inheritance.ParentTables, "parent should have parents")
+	require.Len(t, parentInheritsGp.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".grandparent_table`, parentInheritsGp.Inheritance.ParentTables[0].Name)
+	assert.Equal(t, grandparentTable.Oid, parentInheritsGp.Inheritance.ParentTables[0].Oid)
+
+	childInheritsParent := findTableInDb(actual, "test-db", "test-db", "child_inherits_parent")
+	require.NotNil(t, childInheritsParent, "child_inherits_parent should exist")
+
+	require.NotNil(t, childInheritsParent.Inheritance.ParentTables, "child should have parents")
+	require.Len(t, childInheritsParent.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".parent_inherits_gp`, childInheritsParent.Inheritance.ParentTables[0].Name)
+	assert.Equal(t, parentInheritsGp.Oid, childInheritsParent.Inheritance.ParentTables[0].Oid)
+}
+
+func TestListTablesInheritanceMultipleParents(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	mixinA := findTableInDb(actual, "test-db", "test-db", "mixin_a")
+	require.NotNil(t, mixinA, "mixin_a should exist")
+
+	assert.Nil(t, mixinA.Inheritance.ParentTables, "mixin_a should have no parents")
+
+	mixinB := findTableInDb(actual, "test-db", "test-db", "mixin_b")
+	require.NotNil(t, mixinB, "mixin_b should exist")
+
+	assert.Nil(t, mixinB.Inheritance.ParentTables, "mixin_b should have no parents")
+
+	multiInherit := findTableInDb(actual, "test-db", "test-db", "multi_inherit")
+	require.NotNil(t, multiInherit, "multi_inherit should exist")
+
+	require.NotNil(t, multiInherit.Inheritance.ParentTables, "multi_inherit should have parents")
+	require.Len(t, multiInherit.Inheritance.ParentTables, 2, "multi_inherit should have 2 parents")
+
+	parentNames := []string{
+		multiInherit.Inheritance.ParentTables[0].Name,
+		multiInherit.Inheritance.ParentTables[1].Name,
+	}
+	assert.ElementsMatch(t, []string{`"test-db".mixin_a`, `"test-db".mixin_b`}, parentNames)
+
+	// Verify OIDs match
+	parentOids := make(map[uint32]bool)
+	for _, parent := range multiInherit.Inheritance.ParentTables {
+		assert.NotZero(t, parent.Oid)
+		parentOids[parent.Oid] = true
+	}
+	assert.Contains(t, parentOids, mixinA.Oid, "should contain mixin_a OID")
+	assert.Contains(t, parentOids, mixinB.Oid, "should contain mixin_b OID")
+}
+
+func TestListTablesInheritanceMultipleChildren(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	sharedParent := findTableInDb(actual, "test-db", "test-db", "shared_parent")
+	require.NotNil(t, sharedParent, "shared_parent should exist")
+
+	assert.Nil(t, sharedParent.Inheritance.ParentTables, "shared_parent should have no parents")
+
+	childOne := findTableInDb(actual, "test-db", "test-db", "child_one")
+	require.NotNil(t, childOne, "child_one should exist")
+
+	require.NotNil(t, childOne.Inheritance.ParentTables, "child_one should have parents")
+	require.Len(t, childOne.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".shared_parent`, childOne.Inheritance.ParentTables[0].Name)
+	assert.Equal(t, sharedParent.Oid, childOne.Inheritance.ParentTables[0].Oid)
+
+	childTwo := findTableInDb(actual, "test-db", "test-db", "child_two")
+	require.NotNil(t, childTwo, "child_two should exist")
+
+	require.NotNil(t, childTwo.Inheritance.ParentTables, "child_two should have parents")
+	require.Len(t, childTwo.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".shared_parent`, childTwo.Inheritance.ParentTables[0].Name)
+	assert.Equal(t, sharedParent.Oid, childTwo.Inheritance.ParentTables[0].Oid)
 }

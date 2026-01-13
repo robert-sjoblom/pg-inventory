@@ -126,6 +126,7 @@ type Table struct {
 	TableColumns     []*TableColumn     `json:"table_columns"`
 	TableIndexes     []*TableIndex      `json:"table_indexes"`
 	TableConstraints []*TableConstraint `json:"table_constraints"`
+	Inheritance      TableInheritance   `json:"inheritance"`
 	Stats            TableStats         `json:"stats"`
 	Oid              uint32             `json:"oid"`
 }
@@ -135,6 +136,15 @@ type TableStats struct {
 	TotalSizeBytes uint64 `json:"total_size_bytes"`
 	HeapSizeBytes  uint64 `json:"heap_size_bytes"`
 	ToastSizeBytes uint64 `json:"toast_size_bytes"`
+}
+
+type TableInheritance struct {
+	ParentTables []*InheritanceRelation `json:"parent_tables"` // Tables this table inherits from
+}
+
+type InheritanceRelation struct {
+	Name string `json:"name"` // Fully qualified name (e.g., "schema".table)
+	Oid  uint32 `json:"oid"`
 }
 
 type TableColumn struct {

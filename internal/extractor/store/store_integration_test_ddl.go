@@ -158,3 +158,15 @@ CREATE TABLE "test-db".dropped_columns_table (
 );
 ALTER TABLE "test-db".dropped_columns_table DROP COLUMN drop_me_1;
 `
+
+const inheritanceTables = `
+-- Simple inheritance: single parent
+CREATE TABLE "test-db".base_table (
+    id SERIAL PRIMARY KEY,
+    base_col TEXT
+);
+
+CREATE TABLE "test-db".derived_table (
+    derived_col INTEGER
+) INHERITS ("test-db".base_table);
+`

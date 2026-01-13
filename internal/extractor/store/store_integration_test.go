@@ -103,6 +103,14 @@ func TestMain(m *testing.M) {
 				DDL:      droppedColumnsTable,
 			},
 		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      inheritanceTables,
+			},
+		),
 	)
 	if err != nil {
 		log.Fatalf("failed to start shared postgres container: %v", err)
@@ -979,4 +987,51 @@ func TestListTablesDroppedColumns(t *testing.T) {
 	}
 	require.NotNil(t, keep_col)
 	assert.True(t, keep_col.NotNull, "keep_col should be NOT NULL")
+}
+
+func TestListTablesInheritanceSimple(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	baseTable := findTableInDb(actual, "test-db", "test-db", "base_table")
+	require.NotNil(t, baseTable, "base_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", baseTable.Owner)
+	require.Len(t, baseTable.TableColumns, 2, "base_table should have 2 columns")
+
+	baseColumnNames := make([]string, len(baseTable.TableColumns))
+	for i, col := range baseTable.TableColumns {
+		baseColumnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "base_col"}, baseColumnNames)
+
+	// Verify inheritance tracking on base table
+	assert.Nil(t, baseTable.Inheritance.ParentTables, "base_table should have no parents")
+	require.NotNil(t, baseTable.Inheritance.ChildTables, "base_table should have children")
+	assert.ElementsMatch(t, []string{`"test-db".derived_table`}, baseTable.Inheritance.ChildTables)
+
+	derivedTable := findTableInDb(actual, "test-db", "test-db", "derived_table")
+	require.NotNil(t, derivedTable, "derived_table should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", derivedTable.Owner)
+	require.Len(t, derivedTable.TableColumns, 3, "derived_table should have 3 columns (inherited + own)")
+
+	derivedColumnNames := make([]string, len(derivedTable.TableColumns))
+	for i, col := range derivedTable.TableColumns {
+		derivedColumnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "base_col", "derived_col"}, derivedColumnNames, "derived table should have both inherited and own columns")
+
+	// Verify column types
+	columnTypes := make(map[string]string)
+	for _, col := range derivedTable.TableColumns {
+		columnTypes[col.Name] = col.Type
+	}
+	assert.Equal(t, "integer", columnTypes["id"])
+	assert.Equal(t, "text", columnTypes["base_col"])
+	assert.Equal(t, "integer", columnTypes["derived_col"])
+
+	// Verify inheritance tracking on derived table
+	require.NotNil(t, derivedTable.Inheritance.ParentTables, "derived_table should have parents")
+	assert.ElementsMatch(t, []string{`"test-db".base_table`}, derivedTable.Inheritance.ParentTables)
+	assert.Nil(t, derivedTable.Inheritance.ChildTables, "derived_table should have no children")
 }

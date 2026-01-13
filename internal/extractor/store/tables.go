@@ -118,16 +118,15 @@ constraint_data AS (
 inheritance_parents AS (
     SELECT
         inhrelid AS table_oid,
-        array_agg(inhparent::regclass::text ORDER BY inhseqno) AS parent_tables
+        jsonb_agg(
+            jsonb_build_object(
+                'oid', inhparent::bigint,
+                'name', inhparent::regclass::text
+            )
+            ORDER BY inhseqno
+        ) AS parent_tables
     FROM pg_inherits
     GROUP BY inhrelid
-),
-inheritance_children AS (
-    SELECT
-        inhparent AS table_oid,
-        array_agg(inhrelid::regclass::text) AS child_tables
-    FROM pg_inherits
-    GROUP BY inhparent
 )
 SELECT
     c.oid,
@@ -158,15 +157,13 @@ SELECT
     ia.indexes AS indexes,
     cd.constraints AS constraints,
     jsonb_build_object(
-        'parent_tables', ip.parent_tables,
-        'child_tables', ic.child_tables
+        'parent_tables', ip.parent_tables
     ) AS inheritance
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace
 LEFT JOIN index_agg ia ON ia.table_oid = c.oid
 LEFT JOIN constraint_data cd ON cd.conrelid = c.oid
 LEFT JOIN inheritance_parents ip ON ip.table_oid = c.oid
-LEFT JOIN inheritance_children ic ON ic.table_oid = c.oid
 WHERE c.relkind = 'r'  -- Only regular tables, not partitioned ('p') or other
 AND n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
 AND n.nspname NOT LIKE 'pg_temp_%'

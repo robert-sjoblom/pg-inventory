@@ -139,8 +139,12 @@ type TableStats struct {
 }
 
 type TableInheritance struct {
-	ParentTables []string `json:"parent_tables"` // Tables this table inherits from
-	ChildTables  []string `json:"child_tables"`  // Tables that inherit from this table
+	ParentTables []*InheritanceRelation `json:"parent_tables"` // Tables this table inherits from
+}
+
+type InheritanceRelation struct {
+	Name string `json:"name"` // Fully qualified name (e.g., "schema".table)
+	Oid  uint32 `json:"oid"`
 }
 
 type TableColumn struct {

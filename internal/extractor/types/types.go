@@ -164,6 +164,7 @@ type TableIndex struct {
 	IsExclusion bool     `json:"is_exclusion"`
 	IsPartial   bool     `json:"is_partial"` // Has a "WHERE" clause in definition
 	IsValid     bool     `json:"is_valid"`
+	IsInherited bool     `json:"is_inherited"` // Propagated from parent table (e.g., partition inherits from partitioned table)
 }
 
 type TableConstraint struct {

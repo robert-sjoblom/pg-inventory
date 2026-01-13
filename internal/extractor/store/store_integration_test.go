@@ -111,6 +111,14 @@ func TestMain(m *testing.M) {
 				DDL:      inheritanceTables,
 			},
 		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      partitionedTablesDDL,
+			},
+		),
 	)
 	if err != nil {
 		log.Fatalf("failed to start shared postgres container: %v", err)
@@ -1113,4 +1121,77 @@ func TestListTablesInheritanceMultipleChildren(t *testing.T) {
 	require.Len(t, childTwo.Inheritance.ParentTables, 1)
 	assert.Equal(t, `"test-db".shared_parent`, childTwo.Inheritance.ParentTables[0].Name)
 	assert.Equal(t, sharedParent.Oid, childTwo.Inheritance.ParentTables[0].Oid)
+}
+
+func TestListTablesPartitionedIndexInheritance(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	// Parent partitioned table should have the index defined on it
+	partitionedTable := findTableInDb(actual, "test-db", "test-db", "partitioned_table")
+	require.NotNil(t, partitionedTable, "partitioned_table should exist")
+
+	var parentDataIndex *types.TableIndex
+	for _, idx := range partitionedTable.TableIndexes {
+		if idx.Name == "idx_partitioned_data" {
+			parentDataIndex = idx
+			break
+		}
+	}
+	require.NotNil(t, parentDataIndex, "parent should have idx_partitioned_data")
+	assert.Equal(t, "btree", parentDataIndex.Type)
+	assert.ElementsMatch(t, []string{"data"}, parentDataIndex.Columns)
+	assert.False(t, parentDataIndex.IsInherited, "index on parent should not be marked as inherited")
+
+	// Partition 2024 should have the inherited index
+	partition2024 := findTableInDb(actual, "test-db", "test-db", "partitioned_table_2024")
+	require.NotNil(t, partition2024, "partitioned_table_2024 should exist")
+
+	// Count indexes on data column
+	var inheritedIndex2024 *types.TableIndex
+	for _, idx := range partition2024.TableIndexes {
+		if len(idx.Columns) == 1 && idx.Columns[0] == "data" {
+			inheritedIndex2024 = idx
+			break
+		}
+	}
+	require.NotNil(t, inheritedIndex2024, "partition 2024 should have an inherited index on data column")
+	assert.True(t, inheritedIndex2024.IsInherited, "partition 2024's data index should be marked as inherited")
+
+	// Partition 2024 should NOT have idx_special_data (local to 2025 only)
+	for _, idx := range partition2024.TableIndexes {
+		assert.NotEqual(t, "idx_special_data", idx.Name, "partition 2024 should not have idx_special_data")
+	}
+
+	// Partition 2025 should have both inherited and local indexes
+	partition2025 := findTableInDb(actual, "test-db", "test-db", "partitioned_table_2025")
+	require.NotNil(t, partition2025, "partitioned_table_2025 should exist")
+
+	// Find all indexes on data column
+	var inheritedIndex2025, localIndex2025 *types.TableIndex
+	for _, idx := range partition2025.TableIndexes {
+		if len(idx.Columns) == 1 && idx.Columns[0] == "data" {
+			if idx.Name == "idx_special_data" {
+				localIndex2025 = idx
+			} else if idx.IsInherited {
+				inheritedIndex2025 = idx
+			}
+		}
+	}
+
+	require.NotNil(t, inheritedIndex2025, "partition 2025 should have inherited data index from parent")
+	assert.True(t, inheritedIndex2025.IsInherited, "inherited index should be marked as inherited")
+
+	require.NotNil(t, localIndex2025, "partition 2025 should have local idx_special_data")
+	assert.Equal(t, "idx_special_data", localIndex2025.Name)
+	assert.False(t, localIndex2025.IsInherited, "local index should not be marked as inherited")
+	assert.ElementsMatch(t, []string{"data"}, localIndex2025.Columns)
+
+	// Verify parent relationship is captured
+	require.NotNil(t, partition2024.Inheritance.ParentTables, "partition should have parent tables")
+	require.Len(t, partition2024.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".partitioned_table`, partition2024.Inheritance.ParentTables[0].Name)
+
+	require.NotNil(t, partition2025.Inheritance.ParentTables, "partition should have parent tables")
+	require.Len(t, partition2025.Inheritance.ParentTables, 1)
+	assert.Equal(t, `"test-db".partitioned_table`, partition2025.Inheritance.ParentTables[0].Name)
 }

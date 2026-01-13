@@ -182,4 +182,17 @@ CREATE TABLE "test-db".parent_inherits_gp (
 CREATE TABLE "test-db".child_inherits_parent (
     child_col BOOLEAN
 ) INHERITS ("test-db".parent_inherits_gp);
+
+-- Multiple inheritance: inherits from two parents
+CREATE TABLE "test-db".mixin_a (
+    mixin_a_col VARCHAR(50)
+);
+
+CREATE TABLE "test-db".mixin_b (
+    mixin_b_col TIMESTAMPTZ
+);
+
+CREATE TABLE "test-db".multi_inherit (
+    own_col JSONB
+) INHERITS ("test-db".mixin_a, "test-db".mixin_b);
 `

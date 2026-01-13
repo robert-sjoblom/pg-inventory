@@ -1061,3 +1061,29 @@ func TestListTablesInheritanceMultiLevel(t *testing.T) {
 	assert.ElementsMatch(t, []string{`"test-db".parent_inherits_gp`}, childInheritsParent.Inheritance.ParentTables)
 	assert.Nil(t, childInheritsParent.Inheritance.ChildTables, "child should have no children")
 }
+
+func TestListTablesInheritanceMultipleParents(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	mixinA := findTableInDb(actual, "test-db", "test-db", "mixin_a")
+	require.NotNil(t, mixinA, "mixin_a should exist")
+
+	assert.Nil(t, mixinA.Inheritance.ParentTables, "mixin_a should have no parents")
+	require.NotNil(t, mixinA.Inheritance.ChildTables, "mixin_a should have children")
+	assert.Contains(t, mixinA.Inheritance.ChildTables, `"test-db".multi_inherit`)
+
+	mixinB := findTableInDb(actual, "test-db", "test-db", "mixin_b")
+	require.NotNil(t, mixinB, "mixin_b should exist")
+
+	assert.Nil(t, mixinB.Inheritance.ParentTables, "mixin_b should have no parents")
+	require.NotNil(t, mixinB.Inheritance.ChildTables, "mixin_b should have children")
+	assert.Contains(t, mixinB.Inheritance.ChildTables, `"test-db".multi_inherit`)
+
+	multiInherit := findTableInDb(actual, "test-db", "test-db", "multi_inherit")
+	require.NotNil(t, multiInherit, "multi_inherit should exist")
+
+	require.NotNil(t, multiInherit.Inheritance.ParentTables, "multi_inherit should have parents")
+	require.Len(t, multiInherit.Inheritance.ParentTables, 2, "multi_inherit should have 2 parents")
+	assert.ElementsMatch(t, []string{`"test-db".mixin_a`, `"test-db".mixin_b`}, multiInherit.Inheritance.ParentTables)
+	assert.Nil(t, multiInherit.Inheritance.ChildTables, "multi_inherit should have no children")
+}

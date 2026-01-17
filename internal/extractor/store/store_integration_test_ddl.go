@@ -252,3 +252,12 @@ END; $$ LANGUAGE plpgsql;
 const fooTableDDL = `
 CREATE TABLE "test-db".foo();
 `
+
+const specialCharsTableDDL = `
+CREATE TABLE "test-db"."Table-With-Dashes" (
+    "Column With Spaces" TEXT,
+    "column-with-dashes" INTEGER,
+    "MixedCase" BOOLEAN
+);
+COMMENT ON TABLE "test-db"."Table-With-Dashes" IS 'Table with special characters in identifiers';
+`

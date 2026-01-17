@@ -142,6 +142,14 @@ func TestMain(m *testing.M) {
 				DDL:      fooTableDDL,
 			},
 		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      specialCharsTableDDL,
+			},
+		),
 	)
 	if err != nil {
 		log.Fatalf("failed to start shared postgres container: %v", err)
@@ -1172,4 +1180,31 @@ func TestListTablesPartitionedIndexInheritance(t *testing.T) {
 	require.NotNil(t, partition2025.Inheritance.ParentTables, "partition should have parent tables")
 	require.Len(t, partition2025.Inheritance.ParentTables, 1)
 	assert.Equal(t, `"test-db".partitioned_table`, partition2025.Inheritance.ParentTables[0].Name)
+}
+
+func TestListTablesSpecialCharacters(t *testing.T) {
+	_, _, actual := setupStoreAndListTables(t)
+
+	specialTable := findTableInDb(actual, "test-db", "test-db", "Table-With-Dashes")
+	require.NotNil(t, specialTable, "Table-With-Dashes should exist in test-db.test-db")
+
+	assert.Equal(t, "test-db-owner", specialTable.Owner)
+	require.NotNil(t, specialTable.Comment)
+	assert.Equal(t, "Table with special characters in identifiers", *specialTable.Comment)
+
+	require.Len(t, specialTable.TableColumns, 3, "should have 3 columns")
+
+	columnNames := make([]string, len(specialTable.TableColumns))
+	for i, col := range specialTable.TableColumns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"Column With Spaces", "column-with-dashes", "MixedCase"}, columnNames)
+
+	columnTypes := make(map[string]string)
+	for _, col := range specialTable.TableColumns {
+		columnTypes[col.Name] = col.Type
+	}
+	assert.Equal(t, "text", columnTypes["Column With Spaces"])
+	assert.Equal(t, "integer", columnTypes["column-with-dashes"])
+	assert.Equal(t, "boolean", columnTypes["MixedCase"])
 }

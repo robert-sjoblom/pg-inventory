@@ -176,9 +176,9 @@ func findDb(tablesInfo []*types.TablesInfo, dbName string) *types.TablesInfo {
 func setupStore(t *testing.T) (context.Context, *Store) {
 	t.Helper()
 	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	pool := testutil.ConnectAsPgmonitor(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.PgmonitorConnStrFunc())
 	if err != nil {
 		t.Fatalf("store initialization failed: %v", err)
 	}
@@ -201,9 +201,9 @@ func setupStoreAndListTables(t *testing.T) (context.Context, *Store, []*types.Ta
 func TestGetServerInfo(t *testing.T) {
 	ctx := context.Background()
 
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	pool := testutil.ConnectAsPgmonitor(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.PgmonitorConnStrFunc())
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -237,9 +237,9 @@ func TestGetServerInfo(t *testing.T) {
 }
 
 func TestNewStore(t *testing.T) {
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	pool := testutil.ConnectAsPgmonitor(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.PgmonitorConnStrFunc())
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -261,9 +261,9 @@ func TestNewStoreInvalidStanza(t *testing.T) {
 
 func TestListDatabases(t *testing.T) {
 	ctx := context.Background()
-	pool := testutil.ConnectToDatabase(t, sharedCredentials, "postgres")
+	pool := testutil.ConnectAsPgmonitor(t, sharedCredentials, "postgres")
 
-	store, err := NewStore(pool, sharedCredentials.ConnStr)
+	store, err := NewStore(pool, sharedCredentials.PgmonitorConnStrFunc())
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}
@@ -749,9 +749,9 @@ func TestListTablesToastTable(t *testing.T) {
 	)
 
 	// Store needs to connect to postgres database for monitoring.cluster_config
-	pool := testutil.ConnectToDatabase(t, credentials, "postgres")
+	pool := testutil.ConnectAsPgmonitor(t, credentials, "postgres")
 
-	store, err := NewStore(pool, credentials.ConnStr)
+	store, err := NewStore(pool, credentials.PgmonitorConnStrFunc())
 	if err != nil {
 		t.Fatalf("store initialization failed")
 	}

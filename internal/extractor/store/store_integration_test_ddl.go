@@ -230,3 +230,25 @@ CREATE INDEX idx_partitioned_data ON "test-db".partitioned_table (data);
 -- Index on a specific partition
 CREATE INDEX idx_special_data ON "test-db".partitioned_table_2025 (data);
 `
+
+const testSequenceDDL = `
+CREATE SEQUENCE "test-db".test_seq;
+`
+
+const testFunctionsDDL = `
+CREATE FUNCTION "test-db".sum(a INT, b INT)
+RETURNS INT AS $$
+BEGIN
+    RETURN a + b;
+END; $$ LANGUAGE plpgsql;
+
+CREATE FUNCTION "test-db".sum(a INT)
+RETURNS INT AS $$
+BEGIN
+    RETURN a + a;
+END; $$ LANGUAGE plpgsql;
+`
+
+const fooTableDDL = `
+CREATE TABLE "test-db".foo();
+`

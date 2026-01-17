@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/robert-sjoblom/pg-inventory/internal/extractor/types"
 	"github.com/robert-sjoblom/pg-inventory/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -117,6 +116,30 @@ func TestMain(m *testing.M) {
 				Schema:   "test-db",
 				Database: "test-db",
 				DDL:      partitionedTablesDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      testSequenceDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      testFunctionsDDL,
+			},
+		),
+		testutil.WithExtraTables(
+			testutil.ExtraTable{
+				Role:     &role,
+				Schema:   "test-db",
+				Database: "test-db",
+				DDL:      fooTableDDL,
 			},
 		),
 	)
@@ -323,14 +346,6 @@ func TestListExtensions(t *testing.T) {
 func TestListSequences(t *testing.T) {
 	ctx, store := setupStore(t)
 
-	_, err := store.pool.Exec(ctx, "CREATE SEQUENCE test_seq")
-	if err != nil {
-		t.Fatalf("failed to create sequence: %v", err)
-	}
-	t.Cleanup(func() {
-		store.pool.Exec(context.Background(), "DROP SEQUENCE IF EXISTS test_seq")
-	})
-
 	actual, err := store.ListSequences(ctx)
 	if err != nil {
 		t.Fatalf("failed to list sequences: %v", err)
@@ -338,49 +353,19 @@ func TestListSequences(t *testing.T) {
 
 	var testSeq *types.Sequence
 	for _, seq := range actual {
-		if seq.Name == "test_seq" && seq.Database == "postgres" && seq.Schema == "public" {
+		if seq.Name == "test_seq" && seq.Database == "test-db" && seq.Schema == "test-db" {
 			testSeq = seq
 			break
 		}
 	}
 
 	require.NotNil(t, testSeq, "test_seq should exist")
-	assert.Equal(t, "postgres", testSeq.Owner)
+	assert.Equal(t, "test-db-owner", testSeq.Owner)
 	assert.Equal(t, "int8", testSeq.DataType)
 }
 
 func TestListFunctions(t *testing.T) {
 	ctx, store := setupStore(t)
-
-	function := `
-	CREATE FUNCTION sum(a INT, b INT)
-	RETURNS INT AS $$
-	BEGIN
-	RETURN a + b;
-	END; $$ LANGUAGE plpgsql;`
-
-	function2 := `
-	CREATE FUNCTION sum(a INT)
-	RETURNS INT AS $$
-	BEGIN
-	RETURN a + a;
-	END; $$ LANGUAGE plpgsql;`
-
-	_, err := store.pool.Exec(ctx, function)
-	if err != nil {
-		t.Fatalf("failed to create function: %v", err)
-	}
-	t.Cleanup(func() {
-		store.pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT, INT)")
-	})
-
-	_, err = store.pool.Exec(ctx, function2)
-	if err != nil {
-		t.Fatalf("failed to create function: %v", err)
-	}
-	t.Cleanup(func() {
-		store.pool.Exec(context.Background(), "DROP FUNCTION IF EXISTS sum(INT)")
-	})
 
 	actual, err := store.ListFunctions(ctx)
 	if err != nil {
@@ -389,7 +374,7 @@ func TestListFunctions(t *testing.T) {
 
 	var sumFunctions []*types.Function
 	for _, fn := range actual {
-		if fn.Name == "sum" && fn.Database == "postgres" && fn.Schema == "public" {
+		if fn.Name == "sum" && fn.Database == "test-db" && fn.Schema == "test-db" {
 			sumFunctions = append(sumFunctions, fn)
 		}
 	}
@@ -409,24 +394,16 @@ func TestListFunctions(t *testing.T) {
 	require.NotNil(t, sum2Args, "sum(a integer, b integer) should exist")
 	assert.Equal(t, "plpgsql", sum2Args.Language)
 	assert.Equal(t, "integer", sum2Args.ReturnType)
-	assert.Equal(t, "postgres", sum2Args.Owner)
+	assert.Equal(t, "test-db-owner", sum2Args.Owner)
 
 	require.NotNil(t, sum1Arg, "sum(a integer) should exist")
 	assert.Equal(t, "plpgsql", sum1Arg.Language)
 	assert.Equal(t, "integer", sum1Arg.ReturnType)
-	assert.Equal(t, "postgres", sum1Arg.Owner)
+	assert.Equal(t, "test-db-owner", sum1Arg.Owner)
 }
 
 func TestBasicTable(t *testing.T) {
 	ctx, store := setupStore(t)
-
-	_, err := store.pool.Exec(ctx, "CREATE TABLE foo();")
-	if err != nil {
-		t.Fatalf("failed to create table: %v", err)
-	}
-	t.Cleanup(func() {
-		store.pool.Exec(context.Background(), "DROP TABLE IF EXISTS foo")
-	})
 
 	actual, err := store.ListTables(ctx)
 	if err != nil {
@@ -436,25 +413,16 @@ func TestBasicTable(t *testing.T) {
 	// Shared container has multiple databases, just verify the ones we need exist
 	assert.GreaterOrEqual(t, len(actual), 2, "should have at least postgres and test-db databases")
 
-	postgresDB := findDb(actual, "postgres")
-	require.NotNil(t, postgresDB, "postgres database should be present")
+	testDB := findDb(actual, "test-db")
+	require.NotNil(t, testDB, "test-db database should be present")
 
-	tableNames := make([]string, len(postgresDB.Tables))
-	for i, table := range postgresDB.Tables {
-		tableNames[i] = table.Schema + "." + table.Name
-	}
-	assert.Contains(t, tableNames, "public.foo")
-
-	fooTable := findTableInDb(actual, "postgres", "public", "foo")
-	require.NotNil(t, fooTable, "foo table should exist in postgres.public")
-	assert.Equal(t, "postgres", fooTable.Owner)
+	fooTable := findTableInDb(actual, "test-db", "test-db", "foo")
+	require.NotNil(t, fooTable, "foo table should exist in test-db.test-db")
+	assert.Equal(t, "test-db-owner", fooTable.Owner)
 	assert.Nil(t, fooTable.Comment)
 	assert.Empty(t, fooTable.TableColumns, "foo table has no columns")
 	assert.Empty(t, fooTable.TableIndexes, "foo table has no indexes")
 	assert.Empty(t, fooTable.TableConstraints, "foo table has no constraints")
-
-	testDB := findDb(actual, "test-db")
-	require.NotNil(t, testDB, "test-db database should be present")
 
 	basicTable := findTableInDb(actual, "test-db", "test-db", "basic_table")
 	require.NotNil(t, basicTable, "basic_table should exist in test-db.test-db")
@@ -741,37 +709,47 @@ func TestListTablesAllColumnTypes(t *testing.T) {
 
 func TestListTablesToastTable(t *testing.T) {
 	const toastTableDDL = `
-	CREATE TABLE public.toast_table (
+	CREATE TABLE toast_db.toast_table (
 		id SERIAL PRIMARY KEY,
 		large_text TEXT,
 		large_jsonb JSONB
 	);
-	ALTER TABLE public.toast_table ALTER COLUMN large_text SET STORAGE EXTERNAL;
-	
-	INSERT INTO public.toast_table (large_text, large_jsonb)
+	ALTER TABLE toast_db.toast_table ALTER COLUMN large_text SET STORAGE EXTERNAL;
+
+	INSERT INTO toast_db.toast_table (large_text, large_jsonb)
 	SELECT
 		string_agg(md5(random()::text), '') || repeat('x', 10000),
 		jsonb_build_object('data', string_agg(md5(random()::text), ''))
 	FROM generate_series(1, 100) i
 	CROSS JOIN generate_series(1, 300) j
 	GROUP BY i;
-	
+
 	-- Analyze to update statistics
-	ANALYZE public.toast_table;
+	ANALYZE toast_db.toast_table;
 	`
 
 	ctx := context.Background()
-	credentials := testutil.StartPostgres(t)
 
-	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
-	if err != nil {
-		t.Fatalf("failed to create connection pool: %v", err)
+	toastRole := testutil.ExtraRole{
+		Database: "toast-db",
+		Schema:   "toast_db",
+		Role:     "toast-owner",
+		Password: "password",
 	}
 
-	_, err = pool.Exec(ctx, toastTableDDL)
-	if err != nil {
-		t.Fatalf("failed to create toasted table: %v", err)
-	}
+	credentials := testutil.StartPostgres(t,
+		testutil.WithClusterConfig("test-cluster", "test-stanza"),
+		testutil.WithExtraRoles(toastRole),
+		testutil.WithExtraTables(testutil.ExtraTable{
+			Role:     &toastRole,
+			Schema:   "toast_db",
+			Database: "toast-db",
+			DDL:      toastTableDDL,
+		}),
+	)
+
+	// Store needs to connect to postgres database for monitoring.cluster_config
+	pool := testutil.ConnectToDatabase(t, credentials, "postgres")
 
 	store, err := NewStore(pool, credentials.ConnStr)
 	if err != nil {
@@ -783,8 +761,8 @@ func TestListTablesToastTable(t *testing.T) {
 		t.Fatalf("failed to query ListTables: %v", err)
 	}
 
-	toastTable := findTableInDb(actual, "postgres", "public", "toast_table")
-	require.NotNil(t, toastTable, "toast_table should exist in postgres.public")
+	toastTable := findTableInDb(actual, "toast-db", "toast_db", "toast_table")
+	require.NotNil(t, toastTable, "toast_table should exist in toast-db.toast_db")
 
 	assert.Equal(t, toastTable.Stats.RowEstimate, int64(100))
 	assert.Equal(t, toastTable.Stats.TotalSizeBytes, uint64(3170304))

@@ -142,7 +142,8 @@ SELECT
             jsonb_build_object(
                 'name', att.attname,
                 'type', format_type(att.atttypid, att.atttypmod),
-                'not_null', att.attnotnull
+                'not_null', att.attnotnull,
+                'is_inherited', (att.attinhcount > 0)
             )
             ORDER BY att.attnum
         )

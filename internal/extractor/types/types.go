@@ -148,9 +148,10 @@ type InheritanceRelation struct {
 }
 
 type TableColumn struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	NotNull bool   `json:"not_null"`
+	Name        string `json:"name"`
+	Type        string `json:"type"`
+	NotNull     bool   `json:"not_null"`
+	IsInherited bool   `json:"is_inherited"`
 }
 
 type TableIndex struct {

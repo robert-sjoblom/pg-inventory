@@ -999,6 +999,10 @@ func TestListTablesInheritanceSimple(t *testing.T) {
 	assert.ElementsMatch(t, []string{"id", "base_col"}, baseColumnNames)
 	assert.Nil(t, baseTable.Inheritance.ParentTables, "base_table should have no parents")
 
+	for _, col := range baseTable.TableColumns {
+		assert.False(t, col.IsInherited, "base_table column %s should not be inherited", col.Name)
+	}
+
 	derivedTable := findTableInDb(actual, "test-db", "test-db", "derived_table")
 	require.NotNil(t, derivedTable, "derived_table should exist in test-db.test-db")
 
@@ -1012,12 +1016,18 @@ func TestListTablesInheritanceSimple(t *testing.T) {
 	assert.ElementsMatch(t, []string{"id", "base_col", "derived_col"}, derivedColumnNames, "derived table should have both inherited and own columns")
 
 	columnTypes := make(map[string]string)
+	columnInherited := make(map[string]bool)
 	for _, col := range derivedTable.TableColumns {
 		columnTypes[col.Name] = col.Type
+		columnInherited[col.Name] = col.IsInherited
 	}
 	assert.Equal(t, "integer", columnTypes["id"])
 	assert.Equal(t, "text", columnTypes["base_col"])
 	assert.Equal(t, "integer", columnTypes["derived_col"])
+
+	assert.True(t, columnInherited["id"], "id should be marked as inherited")
+	assert.True(t, columnInherited["base_col"], "base_col should be marked as inherited")
+	assert.False(t, columnInherited["derived_col"], "derived_col should not be marked as inherited")
 
 	require.NotNil(t, derivedTable.Inheritance.ParentTables, "derived_table should have parents")
 	require.Len(t, derivedTable.Inheritance.ParentTables, 1)
@@ -1116,6 +1126,10 @@ func TestListTablesPartitionedIndexInheritance(t *testing.T) {
 	partitionedTable := findTableInDb(actual, "test-db", "test-db", "partitioned_table")
 	require.NotNil(t, partitionedTable, "partitioned_table should exist")
 
+	for _, col := range partitionedTable.TableColumns {
+		assert.False(t, col.IsInherited, "partitioned_table column %s should not be inherited", col.Name)
+	}
+
 	var parentDataIndex *types.TableIndex
 	for _, idx := range partitionedTable.TableIndexes {
 		if idx.Name == "idx_partitioned_data" {
@@ -1131,6 +1145,10 @@ func TestListTablesPartitionedIndexInheritance(t *testing.T) {
 	// Partition 2024 should have the inherited index
 	partition2024 := findTableInDb(actual, "test-db", "test-db", "partitioned_table_2024")
 	require.NotNil(t, partition2024, "partitioned_table_2024 should exist")
+
+	for _, col := range partition2024.TableColumns {
+		assert.True(t, col.IsInherited, "partition column %s should be marked as inherited", col.Name)
+	}
 
 	// Count indexes on data column
 	var inheritedIndex2024 *types.TableIndex

@@ -94,6 +94,7 @@ message TableColumn {
     string name = 1;
     string type = 2;
     bool not_null = 3;
+    bool is_inherited = 4;
 }
 
 message TableIndex {
@@ -107,6 +108,7 @@ message TableIndex {
     int64 size_bytes = 8;
     string definition = 9;
     string type = 10;
+    bool is_inherited = 11;
 }
 
 message TableConstraint {

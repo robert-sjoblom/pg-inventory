@@ -114,6 +114,18 @@ func (d *TestDbCredentials) ConnStr(db string) string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s", d.dbuser, d.dbpass, d.host, d.port.Port(), db)
 }
 
+// ConnStrForUser returns a connection string for the given database and user
+func (d *TestDbCredentials) ConnStrForUser(db, user, password string) string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s", user, password, d.host, d.port.Port(), db)
+}
+
+// PgmonitorConnStrFunc returns a connection string builder function for pgmonitor user
+func (d *TestDbCredentials) PgmonitorConnStrFunc() func(string) string {
+	return func(db string) string {
+		return d.ConnStrForUser(db, "pgmonitor", "password")
+	}
+}
+
 func StartSharedPostgres(ctx context.Context, opts ...SetupOption) (*TestDbCredentials, error) {
 	db_user := "postgres"
 	db_pass := "postgres"
@@ -232,6 +244,21 @@ func ConnectToDatabase(t *testing.T, credentials *TestDbCredentials, dbName stri
 	return pool
 }
 
+// ConnectAsPgmonitor connects to the specified database as the pgmonitor user
+func ConnectAsPgmonitor(t *testing.T, credentials *TestDbCredentials, dbName string) *pgxpool.Pool {
+	t.Helper()
+	ctx := context.Background()
+	connStr := credentials.ConnStrForUser(dbName, "pgmonitor", "password")
+	pool, err := pgxpool.New(ctx, connStr)
+	if err != nil {
+		t.Fatalf("failed to connect as pgmonitor: %v", err)
+	}
+
+	t.Cleanup(func() { pool.Close() })
+
+	return pool
+}
+
 func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials, cfg *setupConfig) error {
 	pool, err := pgxpool.New(ctx, credentials.ConnStr("postgres"))
 	if err != nil {
@@ -250,10 +277,36 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 		return err
 	}
 
+	// Create pgmonitor user first so we can grant on databases
+	_, err = pool.Exec(ctx, "CREATE USER pgmonitor PASSWORD 'password'")
+	if err != nil {
+		return fmt.Errorf("failed to create pgmonitor user: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, "GRANT pg_monitor TO pgmonitor")
+	if err != nil {
+		return fmt.Errorf("failed to grant pg_monitor role: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, "GRANT USAGE ON SCHEMA monitoring TO pgmonitor")
+	if err != nil {
+		return fmt.Errorf("failed to grant usage on monitoring schema: %w", err)
+	}
+
+	_, err = pool.Exec(ctx, "GRANT SELECT ON monitoring.cluster_config TO pgmonitor")
+	if err != nil {
+		return fmt.Errorf("failed to grant select on cluster_config: %w", err)
+	}
+
 	for _, dbName := range cfg.extraDatabases {
 		_, err = pool.Exec(ctx, fmt.Sprintf("CREATE DATABASE %s", pgx.Identifier{dbName}.Sanitize()))
 		if err != nil {
 			return fmt.Errorf("failed to create database %s: %w", dbName, err)
+		}
+
+		_, err = pool.Exec(ctx, fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO pgmonitor", pgx.Identifier{dbName}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to grant connect on database %s: %w", dbName, err)
 		}
 	}
 
@@ -297,6 +350,11 @@ func applySetupConfiguration(ctx context.Context, credentials *TestDbCredentials
 			pgx.Identifier{role.Role}.Sanitize()))
 		if err != nil {
 			return fmt.Errorf("failed to create database %s: %w", role.Database, err)
+		}
+
+		_, err = pool.Exec(ctx, fmt.Sprintf("GRANT CONNECT ON DATABASE %s TO pgmonitor", pgx.Identifier{role.Database}.Sanitize()))
+		if err != nil {
+			return fmt.Errorf("failed to grant connect on database %s: %w", role.Database, err)
 		}
 
 		rolePool, err := pgxpool.New(ctx, credentials.ConnStr(role.Database))

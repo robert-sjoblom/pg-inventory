@@ -227,3 +227,106 @@ func TestListFunctions(t *testing.T) {
 	assert.Equal(t, "text", fn.ReturnType)
 	assert.Equal(t, "username text", fn.IdentityArguments)
 }
+
+func TestListTables(t *testing.T) {
+	ctx := context.Background()
+	pool := testutil.ConnectAsPgmonitor(t, sharedCredentials, "postgres")
+
+	st, err := store.NewStore(pool, sharedCredentials.PgmonitorConnStrFunc())
+	require.NoError(t, err)
+
+	// Connect as test_owner to create the table
+	ownerConnStr := sharedCredentials.ConnStrForUser("testdb", "test_owner", "password")
+	ownerPool, err := pgxpool.New(ctx, ownerConnStr)
+	require.NoError(t, err)
+	defer ownerPool.Close()
+
+	tableDDL := `
+	CREATE TABLE testschema.users (
+		id SERIAL PRIMARY KEY,
+		email TEXT NOT NULL UNIQUE,
+		created_at TIMESTAMPTZ DEFAULT now()
+	);
+	COMMENT ON TABLE testschema.users IS 'User accounts';
+	CREATE INDEX idx_users_created ON testschema.users (created_at);
+	`
+
+	_, err = ownerPool.Exec(ctx, tableDDL)
+	require.NoError(t, err)
+
+	server := NewServer(st)
+	conn := testutil.DialBufconn(t, server)
+	client := extractorv1.NewExtractorServiceClient(conn)
+
+	resp, err := client.ListTables(ctx, &extractorv1.ListTablesRequest{})
+	require.NoError(t, err)
+
+	var testdbTables *extractorv1.DatabaseTables
+	for _, dt := range resp.DatabaseTables {
+		if dt.Database == "testdb" {
+			testdbTables = dt
+			break
+		}
+	}
+	require.NotNil(t, testdbTables, "expected to find testdb in response")
+
+	var usersTable *extractorv1.Table
+	for _, tbl := range testdbTables.Tables {
+		if tbl.Name == "users" && tbl.Schema == "testschema" {
+			usersTable = tbl
+			break
+		}
+	}
+	require.NotNil(t, usersTable, "expected to find users table")
+
+	assert.Greater(t, usersTable.Oid, uint32(0))
+	assert.Equal(t, "test_owner", usersTable.Owner)
+	require.NotNil(t, usersTable.Comment)
+	assert.Equal(t, "User accounts", *usersTable.Comment)
+
+	require.Len(t, usersTable.Columns, 3)
+	columnNames := make([]string, len(usersTable.Columns))
+	for i, col := range usersTable.Columns {
+		columnNames[i] = col.Name
+	}
+	assert.ElementsMatch(t, []string{"id", "email", "created_at"}, columnNames)
+
+	// Verify indexes (PK + unique + explicit)
+	require.GreaterOrEqual(t, len(usersTable.Indexes), 3)
+	var pkIndex, createdIndex *extractorv1.TableIndex
+	for _, idx := range usersTable.Indexes {
+		if idx.IsPrimary {
+			pkIndex = idx
+		}
+		if idx.Name == "idx_users_created" {
+			createdIndex = idx
+		}
+	}
+	require.NotNil(t, pkIndex, "expected primary key index")
+	assert.True(t, pkIndex.IsUnique)
+	assert.ElementsMatch(t, []string{"id"}, pkIndex.Columns)
+
+	require.NotNil(t, createdIndex, "expected idx_users_created index")
+	assert.Equal(t, "btree", createdIndex.Type)
+	assert.ElementsMatch(t, []string{"created_at"}, createdIndex.Columns)
+
+	// Verify constraints
+	require.GreaterOrEqual(t, len(usersTable.Constraints), 2) // PK + unique
+	var pkConstraint *extractorv1.TableConstraint
+	for _, con := range usersTable.Constraints {
+		if con.Type == "primary_key" {
+			pkConstraint = con
+			break
+		}
+	}
+	require.NotNil(t, pkConstraint)
+	assert.ElementsMatch(t, []string{"id"}, pkConstraint.LocalColumns)
+
+	// Verify stats
+	require.NotNil(t, usersTable.Stats)
+	assert.GreaterOrEqual(t, usersTable.Stats.TotalSizeBytes, uint64(0))
+
+	// Verify inheritance (should be empty for non-inherited table)
+	require.NotNil(t, usersTable.Inheritance)
+	assert.Empty(t, usersTable.Inheritance.ParentTables)
+}

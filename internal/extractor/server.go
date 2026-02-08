@@ -174,3 +174,100 @@ func (s *Server) ListFunctions(ctx context.Context, req *extractorv1.ListFunctio
 		Functions: resp,
 	}, nil
 }
+
+func (s *Server) ListTables(ctx context.Context, req *extractorv1.ListTablesRequest) (*extractorv1.ListTablesResponse, error) {
+	tablesInfo, err := s.store.ListTables(ctx)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to list tables: %v", err)
+	}
+
+	databaseTables := make([]*extractorv1.DatabaseTables, 0, len(tablesInfo))
+	for _, dbTables := range tablesInfo {
+		tables := make([]*extractorv1.Table, 0, len(dbTables.Tables))
+		for _, t := range dbTables.Tables {
+			tables = append(tables, tableToProto(t))
+		}
+		databaseTables = append(databaseTables, &extractorv1.DatabaseTables{
+			Database: dbTables.Database,
+			Tables:   tables,
+		})
+	}
+
+	return &extractorv1.ListTablesResponse{
+		DatabaseTables: databaseTables,
+	}, nil
+}
+
+func tableToProto(t *types.Table) *extractorv1.Table {
+	columns := make([]*extractorv1.TableColumn, 0, len(t.TableColumns))
+	for _, col := range t.TableColumns {
+		columns = append(columns, &extractorv1.TableColumn{
+			Name:        col.Name,
+			Type:        col.Type,
+			NotNull:     col.NotNull,
+			IsInherited: col.IsInherited,
+		})
+	}
+
+	indexes := make([]*extractorv1.TableIndex, 0, len(t.TableIndexes))
+	for _, idx := range t.TableIndexes {
+		indexes = append(indexes, &extractorv1.TableIndex{
+			Name:        idx.Name,
+			Type:        idx.Type,
+			Columns:     idx.Columns,
+			IsUnique:    idx.IsUnique,
+			IsPrimary:   idx.IsPrimary,
+			IsExclusion: idx.IsExclusion,
+			IsPartial:   idx.IsPartial,
+			IsValid:     idx.IsValid,
+			IsInherited: idx.IsInherited,
+			SizeBytes:   idx.SizeBytes,
+			Definition:  idx.Definition,
+		})
+	}
+
+	constraints := make([]*extractorv1.TableConstraint, 0, len(t.TableConstraints))
+	for _, con := range t.TableConstraints {
+		pc := &extractorv1.TableConstraint{
+			Name:           con.Name,
+			Type:           con.Type,
+			LocalColumns:   con.LocalColumns,
+			ForeignColumns: con.ForeignColumns,
+			Definition:     con.Definition,
+		}
+		if con.ForeignTable != "" {
+			pc.ForeignTable = &con.ForeignTable
+		}
+		constraints = append(constraints, pc)
+	}
+
+	parentTables := make([]*extractorv1.InheritanceRelation, 0, len(t.Inheritance.ParentTables))
+	for _, parent := range t.Inheritance.ParentTables {
+		parentTables = append(parentTables, &extractorv1.InheritanceRelation{
+			Name: parent.Name,
+			Oid:  parent.Oid,
+		})
+	}
+
+	protoTable := &extractorv1.Table{
+		Oid:         t.Oid,
+		Name:        t.Name,
+		Schema:      t.Schema,
+		Owner:       t.Owner,
+		Comment:     t.Comment,
+		Columns:     columns,
+		Indexes:     indexes,
+		Constraints: constraints,
+		Stats: &extractorv1.TableStats{
+			RowEstimate:    t.Stats.RowEstimate,
+			TotalSizeBytes: t.Stats.TotalSizeBytes,
+			HeapSizeBytes:  t.Stats.HeapSizeBytes,
+			ToastSizeBytes: t.Stats.ToastSizeBytes,
+		},
+		Inheritance: &extractorv1.TableInheritance{
+			ParentTables: parentTables,
+		},
+	}
+
+	return protoTable
+}

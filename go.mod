@@ -1,10 +1,11 @@
 module github.com/robert-sjoblom/pg-inventory
 
-go 1.25.0
+go 1.25.7
 
 require (
 	github.com/stretchr/testify v1.11.1
 	google.golang.org/grpc v1.79.3
+	google.golang.org/protobuf v1.36.11
 )
 
 require (
@@ -56,7 +57,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.39.0 // indirect
 	go.opentelemetry.io/otel/trace v1.39.0 // indirect
 	golang.org/x/crypto v0.46.0 // indirect
-	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 

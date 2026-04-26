@@ -3,3 +3,5 @@ gen/*
 bin/*
 out.txt
 analysis/*
+.envrc
+

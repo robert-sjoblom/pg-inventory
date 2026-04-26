@@ -81,13 +81,23 @@ message Table {
     repeated TableColumn columns = 7;
     repeated TableIndex indexes = 8;
     repeated TableConstraint constraints = 9;
+    TableInheritance inheritance = 10;
+}
+
+message TableInheritance {
+    repeated InheritanceRelation parent_tables = 1;
+}
+
+message InheritanceRelation {
+    string name = 1;  // Fully qualified name (e.g., "schema".table)
+    uint32 oid = 2;
 }
 
 message TableStats {
     int64 row_estimate = 1;
-    int64 total_size_bytes = 2;
-    int64 heap_size_bytes = 3;
-    int64 toast_size_bytes = 4;
+    uint64 total_size_bytes = 2;
+    uint64 heap_size_bytes = 3;
+    uint64 toast_size_bytes = 4;
 }
 
 message TableColumn {
@@ -105,7 +115,7 @@ message TableIndex {
     bool is_exclusion = 5;
     bool is_partial = 6;
     bool is_valid = 7;
-    int64 size_bytes = 8;
+    uint64 size_bytes = 8;
     string definition = 9;
     string type = 10;
     bool is_inherited = 11;

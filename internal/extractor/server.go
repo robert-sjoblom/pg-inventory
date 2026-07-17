@@ -28,15 +28,12 @@ func (s *Server) ListDatabases(ctx context.Context, req *extractorv1.ListDatabas
 		return nil, status.Errorf(codes.Internal, "failed to list databases: %v", err)
 	}
 
-	databases := make([]*extractorv1.Database, 0, len(dbs))
+	resp := make([]*extractorv1.Database, 0, len(dbs))
 	for _, db := range dbs {
-		databases = append(databases, &extractorv1.Database{
-			Oid:  db.Oid,
-			Name: db.Name,
-		})
+		resp = append(resp, db.ToProto())
 	}
 
-	return &extractorv1.ListDatabasesResponse{Databases: databases}, nil
+	return &extractorv1.ListDatabasesResponse{Databases: resp}, nil
 }
 
 func (s *Server) ListBackups(ctx context.Context, req *extractorv1.ListBackupsRequest) (*extractorv1.ListBackupsResponse, error) {
@@ -64,17 +61,7 @@ func (s *Server) ListBackups(ctx context.Context, req *extractorv1.ListBackupsRe
 
 	backupInfo := make([]*extractorv1.BackupInfo, 0, len(backups))
 	for _, backup := range backups {
-		backupInfo = append(backupInfo, &extractorv1.BackupInfo{
-			Label:           backup.Label,
-			Type:            backup.Type,
-			TimestampStart:  backup.Timestamp.Start,
-			TimestampStop:   backup.Timestamp.Stop,
-			BackupSize:      backup.Info.Size,
-			RepoSize:        backup.Info.Repository.Size,
-			DatabaseVersion: dbVersion,
-			Error:           backup.Error,
-			RepoKey:         uint32(backup.Database.RepoKey),
-		})
+		backupInfo = append(backupInfo, backup.ToProto(dbVersion))
 	}
 
 	return &extractorv1.ListBackupsResponse{
@@ -105,12 +92,7 @@ func (s *Server) ListSchemas(ctx context.Context, req *extractorv1.ListSchemasRe
 
 	resp := make([]*extractorv1.Schema, 0, len(schemas))
 	for _, schema := range schemas {
-		resp = append(resp, &extractorv1.Schema{
-			Oid:      schema.Oid,
-			Name:     schema.Name,
-			Owner:    schema.Owner,
-			Database: schema.Database,
-		})
+		resp = append(resp, schema.ToProto())
 	}
 
 	return &extractorv1.ListSchemasResponse{
@@ -135,14 +117,7 @@ func (s *Server) ListSequences(ctx context.Context, req *extractorv1.ListSequenc
 
 	resp := make([]*extractorv1.Sequence, 0, len(seqs))
 	for _, seq := range seqs {
-		resp = append(resp, &extractorv1.Sequence{
-			Oid:      seq.Oid,
-			Name:     seq.Name,
-			Schema:   seq.Schema,
-			Owner:    seq.Owner,
-			Database: seq.Database,
-			DataType: seq.DataType,
-		})
+		resp = append(resp, seq.ToProto())
 	}
 
 	return &extractorv1.ListSequencesResponse{
@@ -158,16 +133,7 @@ func (s *Server) ListFunctions(ctx context.Context, req *extractorv1.ListFunctio
 
 	resp := make([]*extractorv1.Function, 0, len(functions))
 	for _, function := range functions {
-		resp = append(resp, &extractorv1.Function{
-			Oid:               function.Oid,
-			Name:              function.Name,
-			Schema:            function.Schema,
-			Owner:             function.Owner,
-			Database:          function.Database,
-			Language:          function.Language,
-			ReturnType:        function.ReturnType,
-			IdentityArguments: function.IdentityArguments,
-		})
+		resp = append(resp, function.ToProto())
 	}
 
 	return &extractorv1.ListFunctionsResponse{

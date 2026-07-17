@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/docker/go-connections/nat"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/moby/moby/api/types/network"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
@@ -101,7 +101,7 @@ type TestDbCredentials struct {
 	dbuser    string
 	dbpass    string
 	host      string
-	port      nat.Port
+	port      network.Port
 }
 
 func (d *TestDbCredentials) Terminate(ctx context.Context) {

@@ -235,6 +235,60 @@ func ServerInfoToProto(info *ServerInfo, clusterName string) (*extractorv1.GetSe
 	}, nil
 }
 
+func (d Database) ToProto() *extractorv1.Database {
+	return &extractorv1.Database{
+		Oid:  d.Oid,
+		Name: d.Name,
+	}
+}
+
+func (s *Schema) ToProto() *extractorv1.Schema {
+	return &extractorv1.Schema{
+		Oid:      s.Oid,
+		Name:     s.Name,
+		Owner:    s.Owner,
+		Database: s.Database,
+	}
+}
+
+func (s *Sequence) ToProto() *extractorv1.Sequence {
+	return &extractorv1.Sequence{
+		Oid:      s.Oid,
+		Name:     s.Name,
+		Schema:   s.Schema,
+		Owner:    s.Owner,
+		Database: s.Database,
+		DataType: s.DataType,
+	}
+}
+
+func (f *Function) ToProto() *extractorv1.Function {
+	return &extractorv1.Function{
+		Oid:               f.Oid,
+		Name:              f.Name,
+		Schema:            f.Schema,
+		Owner:             f.Owner,
+		Database:          f.Database,
+		Language:          f.Language,
+		ReturnType:        f.ReturnType,
+		IdentityArguments: f.IdentityArguments,
+	}
+}
+
+func (b *Backup) ToProto(dbVersion string) *extractorv1.BackupInfo {
+	return &extractorv1.BackupInfo{
+		Label:           b.Label,
+		Type:            b.Type,
+		TimestampStart:  b.Timestamp.Start,
+		TimestampStop:   b.Timestamp.Stop,
+		BackupSize:      b.Info.Size,
+		RepoSize:        b.Info.Repository.Size,
+		DatabaseVersion: dbVersion,
+		Error:           b.Error,
+		RepoKey:         uint32(b.Database.RepoKey),
+	}
+}
+
 var pgVersionPattern = regexp.MustCompile(`^PostgreSQL (\d+\.\d+)`)
 
 func parsePgVersion(pgVersion string) (string, error) {
